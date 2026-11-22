@@ -1,6 +1,6 @@
 # Pushes org-dotgithub/ into the .github repository of every organization in config/governance.json.
 # Deterministic, no model. Needs the governance app installed on each organization (contents:write
-# on the .github repository); see docs/MANUAL-STEPS.md.
+# on the .github repository); see docs/MANUAL-STEPS.md. Empty .github repositories are initialized.
 name: self-sync-org-dotgithub
 on:
   push:
@@ -43,12 +43,6 @@ jobs:
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
           owner: ${{ matrix.org }}
           repositories: .github
-      - name: Checkout .github repository
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ matrix.org }}/.github
-          token: ${{ steps.app.outputs.token }}
-          path: target
       - name: Render and push
         env:
           ORG: ${{ matrix.org }}
@@ -56,6 +50,9 @@ jobs:
           SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           set -euo pipefail
+          git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/${ORG}/.github.git" target
+          # A freshly created, empty repository has no branch yet: start it as main.
+          git -C target rev-parse --verify -q HEAD >/dev/null || git -C target symbolic-ref HEAD refs/heads/main
           python3 scripts/sync_org_dotgithub.py --org "$ORG" --target-dir target
           cd target
           if [ -z "$(git status --porcelain)" ]; then echo "unchanged"; exit 0; fi
@@ -64,4 +61,4 @@ jobs:
           git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
           git add -A
           git commit -m "chore: sync community health files from nullthrone/governance@${GITHUB_SHA::12}"
-          git push
+          git push origin HEAD

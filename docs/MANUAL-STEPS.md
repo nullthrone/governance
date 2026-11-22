@@ -24,7 +24,7 @@ The official Claude GitHub App requests **Workflows: read and write**, so it is 
 
 ## 3. Organization settings
 
-- [ ] Each organization has a public `.github` repository (create it if missing), then run the workflow **self-sync-org-dotgithub** once (Actions → Run workflow).
+- [ ] Each organization has a public `.github` repository (create it if missing; it may stay empty), then run the workflow **self-sync-org-dotgithub** in `nullthrone/governance` once (Actions → self-sync-org-dotgithub → Run workflow). It fills every organization's `.github` repository and runs again on each change to `org-dotgithub/`.
 - [ ] If an organization restricts Actions: allow `nullthrone/governance/*` and the actions used in `.github/workflows/` (actions/*, github/codeql-action, googleapis/release-please-action, pypa/gh-action-pypi-publish, rust-lang/crates-io-auth-action, anthropics/claude-code-action, ossf/scorecard-action).
 - [ ] Optional: enable organization Discussions with the `.github` repository as source, so the Ideas link in the organization-wide issue forms works for repositories that are not onboarded yet.
 - [ ] Private repositories need GitHub Team (organization) or Pro (personal) for rulesets. Move personal private repositories into an organization if needed.
