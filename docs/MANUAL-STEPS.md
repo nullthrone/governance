@@ -8,18 +8,18 @@ Order matters for steps 1–4. Nothing here was created automatically.
 Autonomous jobs must act under a bot identity whose token cannot change `.github/workflows/`.
 The official Claude GitHub App requests **Workflows: read and write**, so it is not used for automation; jobs pass their own app token to `claude-code-action`.
 
-- [ ] Create a GitHub App (owner: your account) named **`nullthrone-governance`**. If the slug differs, update `bot_app_slug` and `bots` in `config/governance.json`.
+- [x] Create a GitHub App (owner: your account) named **`nullthrone-governance`**. If the slug differs, update `bot_app_slug` and `bots` in `config/governance.json`.
   - Webhook: off. Installable: "Any account" (needed for several organizations).
   - Repository permissions: Contents **write**, Pull requests **write**, Issues **write**, Checks read, Actions read, Administration read (audit reads rulesets), Discussions read (Ideas digest), Metadata read.
   - **Workflows: no access.** Organization and account permissions: none.
-- [ ] Generate a private key.
-- [ ] Install the app on `nullthrone`, `sprocksystems` and your personal account (all repositories, or at least every governed repo plus each organization's `.github` repo).
-- [ ] Per organization: variable `GOVERNANCE_APP_ID` and secret `GOVERNANCE_APP_PRIVATE_KEY` (organization level, visible to all repositories). Personal-account repositories need them as repository variable/secret.
-- [ ] In `nullthrone/governance` itself: the same variable and secret (used by `self-sync-org-dotgithub`).
+- [x] Generate a private key.
+- [x] Install the app on all orgs and your personal account (all repositories, or at least every governed repo plus each organization's `.github` repo).
+- [x] Per organization: variable `GOVERNANCE_APP_ID` and secret `GOVERNANCE_APP_PRIVATE_KEY` (organization level, visible to all repositories). Personal-account repositories need them as repository variable/secret.
+- [x] In `nullthrone/governance` itself: the same variable and secret (used by `self-sync-org-dotgithub`).
 
 ## 2. Claude token (cost decision)
 
-- [ ] `claude setup-token` and store the result as organization secret `CLAUDE_CODE_OAUTH_TOKEN` (and per personal repo).
+- [x] `claude setup-token` and store the result as organization secret `CLAUDE_CODE_OAUTH_TOKEN` (and per personal repo).
   Background jobs share your personal plan's limits with interactive use; there is no priority mechanism. Frequencies and model tiers are in `config/governance.json` and `scripts/housekeeping.py`.
 
 ## 3. Organization settings
