@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import checks  # noqa: E402
 import classify_check  # noqa: E402
+import detect_profile  # noqa: E402
 import govlib  # noqa: E402
 
 NIGHTLY = "17 2 * * *"
@@ -57,7 +58,7 @@ def now() -> dt.datetime:
 # --------------------------------------------------------------------------- plan
 
 
-def plan(schedule: str, task: str | None, profile: dict) -> dict:
+def plan(schedule: str, task: str | None, profile: dict, root: Path = Path(".")) -> dict:
     profiles = profile.get("profiles") or []
     if task:
         cadence_tasks = [task]
@@ -77,7 +78,7 @@ def plan(schedule: str, task: str | None, profile: dict) -> dict:
             continue
         model_tasks.append(name)
     deterministic = [n for n in cadence_tasks if n in ("audit", "cleanup")]
-    fuzz = "fuzz" in cadence_tasks and bool(govlib.dig(profile, "fuzz.targets"))
+    fuzz = "fuzz" in cadence_tasks and bool(detect_profile.fuzz_targets(profile, root))
     return {"model": model_tasks, "deterministic": deterministic, "fuzz": fuzz}
 
 

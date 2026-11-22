@@ -15,13 +15,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import detect_profile  # noqa: E402
 import govlib  # noqa: E402
 
 
-def outputs(profile: dict) -> dict[str, str]:
+def outputs(profile: dict, repo_dir: str = ".") -> dict[str, str]:
     profiles = profile.get("profiles") or []
     commands = profile.get("commands") or {}
-    fuzz_targets = govlib.dig(profile, "fuzz.targets") or []
+    fuzz_targets = detect_profile.fuzz_targets(profile, Path(repo_dir))
     return {
         "language": str(profile.get("language") or "other"),
         "runtime_version": str(profile.get("runtime_version") or ""),
@@ -67,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             print(value)
         return 0
     if args.cmd == "outputs":
-        for key, value in outputs(profile).items():
+        for key, value in outputs(profile, args.repo_dir).items():
             govlib.set_output(key, value)
         return 0
     if args.cmd == "run":
