@@ -1,0 +1,155 @@
+# Claude review (correctness, security, fix/feat classification) as a required check.
+# The job always runs; steps decide. A skipped job would count as success for required checks.
+#   review  Claude reviews; the verdict line decides the check. Bot PRs with findings get fixed
+#           by the implementer in the same run (up to review_max_rounds rounds).
+#   skip    promotion PRs (main<->next), release-please PRs, dependency bots: deterministic checks only
+#   fork    fork PRs are never merged directly; after the owner's approval Claude ports them
+#   limit   too many rounds; labeled blocked
+name: review
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: false
+
+permissions: {}
+
+jobs:
+  claude-review:
+    name: claude-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Decide review mode
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" review-mode
+      - name: Not reviewable
+        if: steps.mode.outputs.mode == 'fork' || steps.mode.outputs.mode == 'limit'
+        run: |
+          echo "::error::Review mode '${{ steps.mode.outputs.mode }}' — see the step summary."
+          exit 1
+
+      - name: Checkout PR
+        if: steps.mode.outputs.mode == 'review'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download SAST results
+        if: steps.mode.outputs.mode == 'review'
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          name: semgrep-sarif
+          path: ${{ runner.temp }}/sast
+      - name: Read-only token for Claude
+        if: steps.mode.outputs.mode == 'review'
+        id: readtoken
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: read
+          permission-issues: read
+      - name: Build prompt
+        if: steps.mode.outputs.mode == 'review'
+        id: prompt
+        env:
+          PR: ${{ steps.mode.outputs.pr }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job review --agent reviewer --tier large \
+            --var "pr=$PR" --var "repo=$GITHUB_REPOSITORY" --var "sast_file=$RUNNER_TEMP/sast/semgrep.sarif"
+      - name: Claude review
+        if: steps.mode.outputs.mode == 'review'
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.readtoken.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.readtoken.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,LS,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch"
+      - name: Post review and apply verdict
+        if: steps.mode.outputs.mode == 'review'
+        id: verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: python3 "$GOV/scripts/checks.py" review-verdict --execution-file "$EXECUTION_FILE"
+
+      # Bot-authored PRs: the implementer addresses the findings; its push starts the next round.
+      - name: Write token for the implementer
+        if: failure() && steps.verdict.outcome == 'failure' && steps.mode.outputs.author_is_bot == 'true'
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - name: Checkout PR branch for fixes
+        if: failure() && steps.app.outcome == 'success'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      - name: Bot git identity
+        if: failure() && steps.app.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build fix prompt
+        if: failure() && steps.app.outcome == 'success'
+        id: fixprompt
+        env:
+          PR: ${{ steps.mode.outputs.pr }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job address-review --agent implementer --tier large \
+            --var "pr=$PR" --var "repo=$GITHUB_REPOSITORY" --var "head=$HEAD"
+      - name: Claude addresses findings
+        if: failure() && steps.app.outcome == 'success'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.fixprompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.fixprompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 80
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite"

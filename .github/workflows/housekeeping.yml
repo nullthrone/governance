@@ -1,0 +1,339 @@
+# Scheduled housekeeping. A deterministic pre-filter (scripts/housekeeping.py check) decides per task
+# whether Claude starts at all; deterministic tasks (audit, cleanup, fuzzing) never use a model
+# unless the fuzzer finds a crash.
+#   nightly  17 2 * * *   roadmap, fork-prequal, fork-adopt, deps, fuzz
+#   weekly   37 3 * * 1   dead-code, flaky, doc-drift, web-checks, deprecations, audit, cleanup
+#   monthly  57 4 1 * *   security-sweep, ideas
+name: housekeeping
+on:
+  workflow_call:
+    inputs:
+      task:
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      model_tasks: ${{ steps.plan.outputs.model_tasks }}
+      deterministic: ${{ steps.plan.outputs.deterministic }}
+      fuzz: ${{ steps.plan.outputs.fuzz }}
+      fuzz_targets: ${{ steps.profile.outputs.fuzz_targets }}
+      fuzz_seconds: ${{ steps.fuzz.outputs.seconds }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - name: Plan tasks
+        id: plan
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          TASK: ${{ inputs.task }}
+        run: python3 "$GOV/scripts/housekeeping.py" plan --schedule "$SCHEDULE" --task "$TASK"
+      - name: Fuzz budget
+        id: fuzz
+        run: echo "seconds=$(( $(jq -r .fuzz_minutes_per_target "$GOV/config/governance.json") * 60 ))" >> "$GITHUB_OUTPUT"
+
+  model-task:
+    name: ${{ matrix.task }}
+    needs: plan
+    if: needs.plan.outputs.model_tasks != '[]' && needs.plan.outputs.model_tasks != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        task: ${{ fromJSON(needs.plan.outputs.model_tasks) }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.language == 'node' || steps.profile.outputs.is_web == 'true'
+        with:
+          node-version: ${{ steps.profile.outputs.language == 'node' && steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal -c clippy && rustup default "$TOOLCHAIN"
+      - name: Project setup (tool-based pre-filters only)
+        if: contains(fromJSON('["dead-code","doc-drift","web-checks"]'), matrix.task)
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+          if [ "$(python3 "$GOV/scripts/profile.py" get classification.api)" = "griffe" ]; then python -m pip install --quiet griffe; fi
+      - name: Pre-filter
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TASK: ${{ matrix.task }}
+        run: python3 "$GOV/scripts/housekeeping.py" check "$TASK"
+      - name: Bot git identity
+        if: steps.check.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build prompt
+        if: steps.check.outputs.run == 'true'
+        id: prompt
+        env:
+          TASK: ${{ matrix.task }}
+          AGENT: ${{ steps.check.outputs.agent }}
+          TIER: ${{ steps.check.outputs.tier }}
+          CONTEXT: ${{ steps.check.outputs.context_file }}
+        run: |
+          args=(--job "$TASK" --tier "$TIER" --vars-file "$RUNNER_TEMP/housekeeping-vars.json")
+          [ -n "$AGENT" ] && args+=(--agent "$AGENT")
+          [ -n "$CONTEXT" ] && args+=(--context-file "$CONTEXT")
+          python3 "$GOV/scripts/build_prompt.py" "${args[@]}"
+      - name: Tool set for the task
+        if: steps.check.outputs.run == 'true'
+        id: tools
+        env:
+          TASK: ${{ matrix.task }}
+        run: |
+          case "$TASK" in
+            fork-prequal) tools='Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr edit:*),Bash(gh issue list:*),Bash(gh issue view:*)' ;;
+            ideas) tools='Read,Bash(gh issue create:*),Bash(gh issue list:*)' ;;
+            *) tools='Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite' ;;
+          esac
+          echo "allowed=$tools" >> "$GITHUB_OUTPUT"
+      - name: Claude
+        if: steps.check.outputs.run == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 100
+            --allowedTools "${{ steps.tools.outputs.allowed }}"
+
+  deterministic:
+    name: deterministic
+    needs: plan
+    if: needs.plan.outputs.deterministic != '[]' && needs.plan.outputs.deterministic != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Governance audit (drift detection, no model)
+        if: contains(fromJSON(needs.plan.outputs.deterministic), 'audit')
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PINNED: ${{ job.workflow_sha }}
+        run: |
+          python3 "$GOV/scripts/governance_audit.py" --repo-dir . --repo "$GITHUB_REPOSITORY" --ci \
+            --expected-sha "$PINNED" --json "$RUNNER_TEMP/audit.json" || true
+          python3 "$GOV/scripts/housekeeping.py" audit-issue --report "$RUNNER_TEMP/audit.json"
+      - name: Cleanup (merged branches, stale bot PRs)
+        if: contains(fromJSON(needs.plan.outputs.deterministic), 'cleanup')
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 "$GOV/scripts/housekeeping.py" cleanup
+
+  fuzz:
+    name: fuzz ${{ matrix.target.name }}
+    needs: plan
+    if: needs.plan.outputs.fuzz == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.fuzz_targets) }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.language == 'node'
+        with:
+          node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust (nightly for cargo-fuzz)
+        if: steps.profile.outputs.language == 'rust'
+        run: rustup toolchain install nightly --profile minimal && cargo install --locked cargo-fuzz
+      - name: Setup
+        run: python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+      - name: Run fuzzer
+        id: run
+        continue-on-error: true
+        env:
+          COMMAND: ${{ matrix.target.command }}
+          SECONDS_BUDGET: ${{ needs.plan.outputs.fuzz_seconds }}
+        run: |
+          cmd="${COMMAND//\{seconds\}/$SECONDS_BUDGET}"
+          echo "\$ $cmd"
+          bash -c "$cmd" 2>&1 | tail -n 300 | tee "$RUNNER_TEMP/fuzz.log"
+          exit "${PIPESTATUS[0]}"
+      - name: Crash directory
+        if: steps.run.outcome == 'failure'
+        id: crash
+        env:
+          CRASH_DIR: ${{ matrix.target.crash_dir || 'fuzz/crashes' }}
+        run: echo "dir=$CRASH_DIR" >> "$GITHUB_OUTPUT"
+      - name: Upload crash artifacts
+        if: steps.run.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuzz-crash-${{ matrix.target.name }}
+          path: |
+            ${{ steps.crash.outputs.dir }}
+            ${{ runner.temp }}/fuzz.log
+          if-no-files-found: ignore
+      - name: Governance app token
+        if: steps.run.outcome == 'failure'
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Re-checkout with write token
+        if: steps.run.outcome == 'failure'
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+        run: git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+      - name: Bot git identity
+        if: steps.run.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build prompt
+        if: steps.run.outcome == 'failure'
+        id: prompt
+        env:
+          TARGET: ${{ matrix.target.name }}
+          CRASH_DIR: ${{ steps.crash.outputs.dir }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job fuzz-crash --agent implementer --tier large \
+            --var "repo=$GITHUB_REPOSITORY" --var "target=$TARGET" --var "crash_dir=$CRASH_DIR" \
+            --context-file "$RUNNER_TEMP/fuzz.log"
+      - name: Claude minimizes, adds regression test and fixes
+        if: steps.run.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 100
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite"

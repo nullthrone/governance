@@ -1,0 +1,244 @@
+# Release from main with release-please: fix -> patch, feat (via candidate merge) -> minor, ! -> major.
+# The release PR auto-merges (app token, so CI runs on it). On release: build, version smoke test,
+# artifact attestations, GitHub release assets, trusted publishing (PyPI / npm / crates.io),
+# post-release check; a failing check triggers a Claude revert PR (patch release follows).
+name: release
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: true
+    outputs:
+      release_created:
+        value: ${{ jobs.release-please.outputs.release_created }}
+      tag_name:
+        value: ${{ jobs.release-please.outputs.tag_name }}
+      version:
+        value: ${{ jobs.release-please.outputs.version }}
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: release-please
+        id: rp
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ steps.app.outputs.token }}
+          target-branch: main
+          config-file: .governance/release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Auto-merge release PR
+        if: steps.rp.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_JSON: ${{ steps.rp.outputs.pr }}
+        run: |
+          number=$(jq -r '.number' <<<"$PR_JSON")
+          gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --auto --squash
+
+  publish:
+    name: publish
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write # release assets
+      id-token: write # trusted publishing, attestations
+      attestations: write
+    outputs:
+      publish: ${{ steps.profile.outputs.publish }}
+      is_library: ${{ steps.profile.outputs.is_library }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.language == 'node'
+        with:
+          node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal && rustup default "$TOOLCHAIN"
+      - name: Setup and build
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+          python3 "$GOV/scripts/profile.py" run commands.build --allow-missing
+      - name: Version smoke test (artifact reports the tag version)
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: python3 "$GOV/scripts/release_tools.py" version-smoke --expected "$VERSION"
+      - name: Artifact attestation
+        if: steps.profile.outputs.artifacts != ''
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.profile.outputs.artifacts }}
+      - name: Upload release assets
+        if: steps.profile.outputs.artifacts != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          ARTIFACTS: ${{ steps.profile.outputs.artifacts }}
+        run: |
+          shopt -s nullglob globstar
+          # ARTIFACTS is a glob from the protected profile; expansion is intended.
+          # shellcheck disable=SC2206
+          files=($ARTIFACTS)
+          if [ ${#files[@]} -gt 0 ]; then gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"; fi
+      - name: Publish to PyPI (trusted publishing)
+        if: steps.profile.outputs.publish == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to npm (trusted publishing)
+        if: steps.profile.outputs.publish == 'npm'
+        run: |
+          npm install -g npm@latest
+          npm publish --provenance --access public
+      - name: crates.io token (trusted publishing)
+        if: steps.profile.outputs.publish == 'crates'
+        id: crates
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish to crates.io
+        if: steps.profile.outputs.publish == 'crates'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates.outputs.token }}
+        run: cargo publish
+
+  post-release-check:
+    name: post-release-check
+    needs: [release-please, publish]
+    if: needs.publish.outputs.publish != 'none' && needs.publish.outputs.publish != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          path: repo
+          persist-credentials: false
+      - name: Install published version from the registry
+        id: check
+        continue-on-error: true
+        env:
+          PUBLISH: ${{ needs.publish.outputs.publish }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          set -uo pipefail
+          name=$(python3 "$GOV/scripts/profile.py" --repo-dir repo get package.name)
+          for _ in $(seq 1 20); do
+            case "$PUBLISH" in
+              pypi) python3 -m pip install --quiet --no-deps "$name==$VERSION" && ok=1 ;;
+              npm) [ "$(npm view "$name@$VERSION" version 2>/dev/null)" = "$VERSION" ] && ok=1 ;;
+              crates) curl -fsS "https://crates.io/api/v1/crates/$name/$VERSION" -A "governance-post-release-check" >/dev/null && ok=1 ;;
+            esac
+            [ "${ok:-0}" = "1" ] && break
+            sleep 30
+          done
+          [ "${ok:-0}" = "1" ] || { echo "$name $VERSION not installable from $PUBLISH" | tee "$RUNNER_TEMP/post-release.log"; exit 1; }
+      - name: Governance app token
+        if: steps.check.outcome == 'failure'
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout main for the revert
+        if: steps.check.outcome == 'failure'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Bot git identity
+        if: steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build prompt
+        if: steps.check.outcome == 'failure'
+        id: prompt
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job release-revert --agent implementer --tier large \
+            --var "repo=$GITHUB_REPOSITORY" --var "tag=$TAG" --context-file "$RUNNER_TEMP/post-release.log"
+      - name: Claude reverts the breaking commit
+        if: steps.check.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 60
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite"
+      - name: Fail visibly
+        if: steps.check.outcome == 'failure'
+        run: |
+          echo "::error::Post-release check failed; a revert PR was requested."
+          exit 1

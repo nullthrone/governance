@@ -1,0 +1,21 @@
+# Managed by nullthrone/governance. Do not edit: changes come only from the owner via onboarding.
+name: governance-issues
+on:
+  issues:
+    types: [opened, labeled]
+permissions: {}
+jobs:
+  po-ready:
+    if: github.event.action == 'labeled' && github.event.label.name == 'po:ready'
+    uses: nullthrone/governance/.github/workflows/po-ready-gate.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      issues: write
+  triage:
+    if: github.event.action == 'opened'
+    uses: nullthrone/governance/.github/workflows/triage.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOVERNANCE_APP_PRIVATE_KEY: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}

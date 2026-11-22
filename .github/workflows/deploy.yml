@@ -1,0 +1,209 @@
+# Deploy a released tag, run the post-deploy smoke test, and roll back automatically to the
+# previous release tag if it fails. Rollback needs no approval: the previous tag was already
+# accepted. Afterwards Claude diagnoses and opens an issue plus a fix PR into main.
+name: deploy
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    concurrency:
+      group: deploy-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      rolled_back: ${{ steps.rollback.outputs.rolled_back }}
+      previous: ${{ steps.prev.outputs.tag }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.has_deploy == 'true' && steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.has_deploy == 'true' && (steps.profile.outputs.language == 'node' || steps.profile.outputs.is_web == 'true')
+        with:
+          node-version: ${{ steps.profile.outputs.language == 'node' && steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.has_deploy == 'true' && steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.profile.outputs.has_deploy == 'true' && steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal && rustup default "$TOOLCHAIN"
+      - name: Build and deploy
+        if: steps.profile.outputs.has_deploy == 'true'
+        env:
+          VERSION: ${{ inputs.tag }}
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+          python3 "$GOV/scripts/profile.py" run commands.build --allow-missing
+          python3 "$GOV/scripts/profile.py" run commands.deploy --env "VERSION=$VERSION"
+      - name: Smoke test against production
+        if: steps.profile.outputs.has_deploy == 'true'
+        id: smoke
+        continue-on-error: true
+        env:
+          VERSION: ${{ inputs.tag }}
+        run: |
+          for _ in 1 2 3; do
+            if python3 "$GOV/scripts/profile.py" run commands.smoke --env "VERSION=$VERSION" 2>&1 | tee -a "$RUNNER_TEMP/smoke.log"; then exit 0; fi
+            sleep 20
+          done
+          exit 1
+      - name: Previous release tag
+        if: steps.smoke.outcome == 'failure'
+        id: prev
+        env:
+          CURRENT: ${{ inputs.tag }}
+        run: python3 "$GOV/scripts/release_tools.py" previous-tag --current "$CURRENT"
+      - name: Roll back to previous tag
+        if: steps.smoke.outcome == 'failure' && steps.prev.outputs.tag != ''
+        id: rollback
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/prev" "$PREV"
+          python3 "$GOV/scripts/profile.py" --repo-dir "$RUNNER_TEMP/prev" run commands.setup --allow-missing
+          python3 "$GOV/scripts/profile.py" --repo-dir "$RUNNER_TEMP/prev" run commands.build --allow-missing
+          python3 "$GOV/scripts/profile.py" --repo-dir "$RUNNER_TEMP/prev" run commands.deploy --env "VERSION=$PREV"
+          python3 "$GOV/scripts/profile.py" --repo-dir "$RUNNER_TEMP/prev" run commands.smoke --env "VERSION=$PREV" | tee -a "$RUNNER_TEMP/smoke.log"
+          echo "rolled_back=true" >> "$GITHUB_OUTPUT"
+      - name: Open rollback issue
+        if: steps.smoke.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BAD: ${{ inputs.tag }}
+          PREV: ${{ steps.prev.outputs.tag }}
+          ROLLED: ${{ steps.rollback.outputs.rolled_back }}
+        run: |
+          {
+            echo "Post-deploy smoke test failed for $BAD."
+            if [ "$ROLLED" = "true" ]; then echo "Production was rolled back to $PREV automatically."; else echo "**Automatic rollback failed or no previous tag exists.**"; fi
+            echo; echo '```'; tail -n 80 "$RUNNER_TEMP/smoke.log" 2>/dev/null || true; echo '```'
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Rollback: $BAD failed post-deploy smoke test" \
+            --label "type:bug" --label "automation:rollback" --body-file "$RUNNER_TEMP/issue.md"
+      - name: Immediate push notification
+        if: steps.smoke.outcome == 'failure'
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_TOKEN: ${{ secrets.ALERT_WEBHOOK_TOKEN }}
+          BAD: ${{ inputs.tag }}
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL:-}" ]; then echo "No ALERT_WEBHOOK_URL configured (see docs/MANUAL-STEPS.md)."; exit 0; fi
+          payload=$(jq -n --arg repo "$GITHUB_REPOSITORY" --arg bad "$BAD" --arg prev "$PREV" \
+            '{text: ("Rollback in " + $repo + ": " + $bad + " -> " + $prev)}')
+          curl -fsS -X POST "$ALERT_WEBHOOK_URL" -H "Authorization: Bearer $ALERT_WEBHOOK_TOKEN" -H "Content-Type: application/json" -d "$payload"
+      - name: Upload smoke log
+        if: steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: smoke-log
+          path: ${{ runner.temp }}/smoke.log
+      - name: Fail visibly
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::Post-deploy smoke test failed for ${{ inputs.tag }}."
+          exit 1
+
+  diagnose:
+    name: diagnose
+    needs: deploy
+    if: always() && needs.deploy.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Download smoke log
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          name: smoke-log
+          path: ${{ runner.temp }}/smoke
+      - name: Bot git identity
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build prompt
+        id: prompt
+        env:
+          BAD: ${{ inputs.tag }}
+          GOOD: ${{ needs.deploy.outputs.previous }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job rollback --agent implementer --tier large \
+            --var "repo=$GITHUB_REPOSITORY" --var "bad_tag=$BAD" --var "good_tag=${GOOD:-none}" \
+            --context-file "$RUNNER_TEMP/smoke/smoke.log"
+      - name: Claude diagnoses and fixes
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 80
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite"

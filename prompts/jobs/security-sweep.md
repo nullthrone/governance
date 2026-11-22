@@ -1,0 +1,2 @@
+Monthly security sweep of the whole codebase of {repo}: there were commits in the last 30 days. Look for vulnerabilities across trust boundaries (see ARCHITECTURE.md), dependency risks, unsafe defaults and secrets handling.
+Fix clear issues in one `fix(security)` PR into main. For anything that needs disclosure, do not describe exploit details publicly: open a private security advisory draft if possible, otherwise an issue labeled `po:decision` without details.

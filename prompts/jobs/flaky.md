@@ -1,0 +1,1 @@
+These CI jobs in {repo} failed and then passed on re-run for the same commit in the last 7 days (below). Find the cause of the flakiness and fix it (tests or code), or add the missing tests. Open one `test` or `fix` PR into main.

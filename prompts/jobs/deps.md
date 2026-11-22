@@ -1,0 +1,1 @@
+Dependency update pull request #{pr} in {repo} (branch `{head}`) fails CI. Make the code compatible with the update on that branch and push. If the update cannot be made compatible with reasonable effort, comment on the PR why and stop.

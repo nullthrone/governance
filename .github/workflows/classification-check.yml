@@ -1,0 +1,86 @@
+# pr-title: Conventional Commit title with an allowed type for the base branch.
+# classification-check: a non-feat PR into main must not change public API, routes or CLI help.
+name: classification-check
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Check title
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" title
+
+  classification-check:
+    name: classification-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: |
+          python3 "$GOV/scripts/profile.py" outputs
+          echo "api=$(python3 "$GOV/scripts/profile.py" get classification.api --default none)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.language == 'node'
+        with:
+          node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal && rustup default "$TOOLCHAIN"
+      - name: Install API diff tool
+        env:
+          API_TOOL: ${{ steps.profile.outputs.api }}
+        run: |
+          case "$API_TOOL" in
+            griffe) python -m pip install --quiet griffe ;;
+            cargo-semver-checks) cargo install --locked cargo-semver-checks ;;
+            *) echo "no extra tool for '$API_TOOL'" ;;
+          esac
+      - name: Compare public surface with base
+        run: python3 "$GOV/scripts/classify_check.py"

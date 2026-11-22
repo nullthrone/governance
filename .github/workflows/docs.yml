@@ -1,0 +1,141 @@
+# User documentation.
+#   mode preview  (push to next)  build docs and upload them as artifact `docs-preview`
+#   mode publish  (release on main) build docs for the tag, translate into the software's locales,
+#                 publish to GitHub Pages. Docs never run ahead of released features.
+# Projects without a docs site (docs.site: false) keep docs in the README; nothing is published.
+name: docs
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      version:
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: build-docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      site: ${{ steps.profile.outputs.docs_site }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.mode == 'publish' && inputs.version || github.sha }}
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Read profile
+        id: profile
+        run: |
+          python3 "$GOV/scripts/profile.py" outputs
+          {
+            echo "output=$(python3 "$GOV/scripts/profile.py" get docs.output --default site)"
+            echo "source=$(python3 "$GOV/scripts/profile.py" get docs.source --default docs)"
+            echo "i18n=$(python3 "$GOV/scripts/profile.py" get docs.i18n_dir --default docs/i18n)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.docs_site == 'true'
+        with:
+          python-version: ${{ steps.profile.outputs.language == 'python' && steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.docs_site == 'true' && (steps.profile.outputs.language == 'node' || steps.profile.outputs.is_web == 'true')
+        with:
+          node-version: ${{ steps.profile.outputs.language == 'node' && steps.profile.outputs.runtime_version || '22' }}
+      - name: Setup
+        if: steps.profile.outputs.docs_site == 'true'
+        run: python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+      - name: Screenshots (Playwright) and terminal recordings
+        if: steps.profile.outputs.docs_site == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 "$GOV/scripts/profile.py" run commands.screenshots --allow-missing --env "VERSION=$VERSION"
+
+      - name: Translation token (read-only)
+        if: steps.profile.outputs.docs_site == 'true' && inputs.mode == 'publish' && steps.profile.outputs.docs_locales != '[]'
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+          permission-contents: read
+      - name: Build translation prompt
+        if: steps.app.outcome == 'success'
+        id: prompt
+        env:
+          LOCALES: ${{ steps.profile.outputs.docs_locales }}
+          SOURCE: ${{ steps.profile.outputs.source }}
+          TARGET: ${{ steps.profile.outputs.i18n }}
+        run: |
+          python3 "$GOV/scripts/build_prompt.py" --job translate-docs --agent doc-writer --tier medium \
+            --var "source_dir=$SOURCE" --var "target_dir=$TARGET" --var "locales=$(jq -r 'join(", ")' <<<"$LOCALES")"
+      - name: Claude translates docs
+        if: steps.app.outcome == 'success'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 80
+            --allowedTools "Read,Write,Edit,Glob,Grep,LS"
+
+      - name: Build docs
+        if: steps.profile.outputs.docs_site == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 "$GOV/scripts/profile.py" run docs.build --env "VERSION=$VERSION"
+      - name: Upload preview
+        if: steps.profile.outputs.docs_site == 'true' && inputs.mode != 'publish'
+        uses: actions/upload-artifact@v6
+        with:
+          name: docs-preview
+          path: ${{ steps.profile.outputs.output }}
+          retention-days: 30
+      - name: Upload Pages artifact
+        if: steps.profile.outputs.docs_site == 'true' && inputs.mode == 'publish'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ steps.profile.outputs.output }}
+
+  deploy:
+    name: deploy-pages
+    needs: build
+    if: inputs.mode == 'publish' && needs.build.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: pages
+        uses: actions/deploy-pages@v4

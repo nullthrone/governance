@@ -1,0 +1,1 @@
+The post-release check for {repo} {tag} failed (log below). Identify the commit that broke the release, open a `revert` PR into main that reverts it (patch release follows automatically), and open an issue with the diagnosis. Enable auto-merge on the PR.

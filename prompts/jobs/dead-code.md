@@ -1,0 +1,1 @@
+The dead-code detector reported findings for {repo} (below). Remove code that is truly unused, verify with the test suite, and open one `refactor` PR into main. Leave public API untouched; ignore false positives (explain them briefly in the PR body).

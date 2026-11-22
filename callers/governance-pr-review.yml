@@ -1,0 +1,16 @@
+# Managed by nullthrone/governance. Do not edit: changes come only from the owner via onboarding.
+# The owner's approval decides external contributions and candidate acceptance.
+name: governance-pr-review
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    uses: nullthrone/governance/.github/workflows/external-contribution-gate.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read

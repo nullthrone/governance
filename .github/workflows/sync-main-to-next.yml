@@ -1,0 +1,104 @@
+# Every push to main is merged into next via an auto-merging PR (merge commit), so CI runs on it.
+# Creates next from main if it does not exist. Conflicts are resolved by Claude on a separate branch.
+name: sync-main-to-next
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  sync:
+    name: sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: sync-main-to-next-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Open or update sync PR
+        id: sync
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main
+          if ! git ls-remote --exit-code --heads origin next >/dev/null; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/heads/next -f sha="$(git rev-parse origin/main)"
+            echo "next created from main"; exit 0
+          fi
+          git fetch --quiet origin next
+          if git merge-base --is-ancestor origin/main origin/next; then
+            echo "next already contains main"; exit 0
+          fi
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base next --head main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base next --head main \
+              --title "chore: sync main into next" --body "Automatic sync of main into next (merge commit). Managed by nullthrone/governance.")
+            pr="${url##*/}"
+          fi
+          gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge || true
+          state=UNKNOWN
+          for _ in 1 2 3 4 5 6; do
+            state=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json mergeable --jq .mergeable)
+            [ "$state" != "UNKNOWN" ] && break
+            sleep 10
+          done
+          echo "mergeable=$state" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
+      - name: Bot git identity
+        if: steps.sync.outputs.mergeable == 'CONFLICTING'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          git config --global user.name "${SLUG}[bot]"
+          git config --global user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+      - name: Build prompt
+        if: steps.sync.outputs.mergeable == 'CONFLICTING'
+        id: prompt
+        env:
+          SHA: ${{ steps.sync.outputs.sha }}
+        run: python3 "$GOV/scripts/build_prompt.py" --job sync-conflict --agent implementer --tier medium --var "repo=$GITHUB_REPOSITORY" --var "sha=$SHA"
+      - name: Claude resolves conflicts
+        if: steps.sync.outputs.mergeable == 'CONFLICTING'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          allowed_bots: "*"
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ steps.prompt.outputs.model }}
+            --plugin-dir ${{ env.GOV }}/plugins/governance
+            --max-turns 60
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite"

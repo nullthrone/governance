@@ -1,0 +1,30 @@
+# Fails when a PR changes governance-protected paths and does not come from the owner.
+# Protected paths: config/governance.json -> protected_paths.
+name: governance-guard
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  governance-guard:
+    name: governance-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Check protected paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" guard

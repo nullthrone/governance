@@ -1,0 +1,1 @@
+{repo} released a new major version ({tag}). Remove deprecated code paths that this major release allows to drop, update docs and tests, and open one PR into next titled `feat!: remove deprecated ...` only if the removal was announced; otherwise label a new issue `po:decision` listing the candidates.
