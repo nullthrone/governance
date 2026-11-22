@@ -19,7 +19,7 @@ dev = ["pytest"]
 
 
 def onboard(root: Path, visibility: str = "public") -> list[str]:
-    changes = install.Installer(root, False).run(FAKE_SHA, visibility, True, True, True)
+    changes = install.Installer(root, False).run(FAKE_SHA, visibility, True, True, True, "o/demo")
     prof_path = root / govlib.PROFILE_PATH
     prof = govlib.yaml_load(prof_path.read_text())
     prof["uncertain"] = []  # owner confirmed
@@ -61,7 +61,10 @@ class InstallAuditTest(unittest.TestCase):
         report = audit(self.root)
         self.assertEqual(failed(report), set(), json.dumps(report["checks"], indent=1))
         self.assertTrue(all(c["status"] in ("pass", "skip") for c in report["checks"]))
-        self.assertEqual(install.Installer(self.root, False).run(FAKE_SHA, "public", True, True, True), [])
+        self.assertEqual(install.Installer(self.root, False).run(FAKE_SHA, "public", True, True, True, "o/demo"), [])
+        config = (self.root / ".github/ISSUE_TEMPLATE/config.yml").read_text()
+        self.assertIn("https://github.com/o/demo/discussions/categories/ideas", config)
+        self.assertIn("blank_issues_enabled: false", config)
         self.assertIn("Use pytest.", (self.root / "CLAUDE.md").read_text())
         self.assertEqual(json.loads((self.root / ".release-please-manifest.json").read_text()), {".": "0.4.1"})
 
@@ -76,7 +79,7 @@ class InstallAuditTest(unittest.TestCase):
             "workflows": lambda r: (r / ".github/workflows/extra.yml").write_text("name: x\n"),
             "claude-dir": lambda r: (r / ".claude/agents").mkdir(),
             "claude-md": lambda r: (r / "CLAUDE.md").write_text((r / "CLAUDE.md").read_text().replace("read-only for Claude", "editable")),
-            "issue-templates": lambda r: (r / ".github/ISSUE_TEMPLATE").mkdir() or (r / ".github/ISSUE_TEMPLATE/bug.yml").write_text("labels: [po:ready]\n"),
+            "issue-templates": lambda r: (r / ".github/ISSUE_TEMPLATE/bug.yml").write_text("labels: [po:ready]\n"),
             "release-mechanism": lambda r: (r / ".releaserc.json").write_text("{}"),
             "architecture-md": lambda r: (r / "ARCHITECTURE.md").write_text((r / "ARCHITECTURE.md").read_text() + "\n".join(f"- d{i}" for i in range(61))),
             "dependabot": lambda r: (r / ".github/dependabot.yml").write_text("version: 2\nupdates:\n  - package-ecosystem: github-actions\n"),
@@ -110,3 +113,19 @@ class InstallAuditTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NewProjectTest(unittest.TestCase):
+    def test_template_passes_audit(self):
+        import tempfile
+
+        import new_project
+
+        for visibility in ("public", "private"):
+            with self.subTest(visibility=visibility), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "proj"
+                new_project.create(target, "acme-tool", FAKE_SHA, visibility, "o/acme-tool")
+                report = governance_audit.Audit(target, "o/acme-tool", "local", visibility, None).run()
+                self.assertEqual(failed(report), set(), json.dumps(report["checks"], indent=1))
+                self.assertTrue((target / "src/acme_tool/cli.py").exists())
+                self.assertNotIn("{{", (target / "pyproject.toml").read_text())

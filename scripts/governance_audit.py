@@ -172,7 +172,12 @@ class Audit:
                 for f in sorted(d.rglob("*")):
                     if f.is_file() and re.search(r"\bpo:[a-z]", f.read_text(encoding="utf-8", errors="ignore")):
                         offenders.append(f.relative_to(self.root).as_posix())
-        self.add("issue-templates", "fail" if offenders else "pass", f"po:* labels in templates: {', '.join(offenders)}" if offenders else "no po:* labels in issue templates")
+        problems = [f"po:* labels in templates: {', '.join(offenders)}"] if offenders else []
+        if self.visibility == "public" and self.repo:
+            for rel, content in install.community_files(f"https://github.com/{self.repo}/discussions", repo_level=True).items():
+                if self.read(rel) != content:
+                    problems.append(f"{rel} missing or differs from org-dotgithub")
+        self.add("issue-templates", "fail" if problems else "pass", "; ".join(problems) or "governance issue forms, no po:* labels")
 
     def check_release_mechanism(self) -> None:
         problems = []

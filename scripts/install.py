@@ -13,6 +13,7 @@ Writes:
   .release-please-manifest.json        only if missing (current version from manifests or tags)
   CLAUDE.md                            managed block replaced, project notes kept
   ARCHITECTURE.md                      created from template, or missing sections appended
+  .github/ISSUE_TEMPLATE, DISCUSSION_TEMPLATE, pull_request_template.md   public repos (needs --repo)
 A second run with the same arguments changes nothing.
 """
 from __future__ import annotations
@@ -33,6 +34,8 @@ PLACEHOLDER = "__GOVERNANCE_SHA__"
 CALLERS_DIR = govlib.GOV_ROOT / "callers"
 TEMPLATES = govlib.GOV_ROOT / "plugins" / "governance" / "templates"
 BLOCK_RE = re.compile(r"<!-- governance:begin.*?<!-- governance:end -->", re.DOTALL)
+ORG_DOTGITHUB = govlib.GOV_ROOT / "org-dotgithub"
+REPO_COMMUNITY_DIRS = (".github/ISSUE_TEMPLATE", ".github/DISCUSSION_TEMPLATE")
 ARCH_SECTIONS = ["## Components", "## Data flows", "## Boundaries", "## Current decisions"]
 ALLOWED_SETTINGS_KEYS = {"$schema", "extraKnownMarketplaces", "enabledPlugins", "attribution", "permissions"}
 RELEASE_TYPES = {"python": "python", "node": "node", "rust": "rust", "go": "go"}
@@ -121,6 +124,23 @@ def dependabot_content(profile: dict, repo_dir: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def community_files(discussions_url: str, repo_level: bool) -> dict[str, str]:
+    """Files from org-dotgithub/ with {{DISCUSSIONS_URL}} filled in.
+
+    repo_level=True: only issue/discussion forms and the PR template (for public project repos,
+    so that the Ideas link points to the repository's own Discussions).
+    """
+    files = {}
+    for path in sorted(ORG_DOTGITHUB.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(ORG_DOTGITHUB).as_posix()
+        if repo_level and not (rel.startswith(REPO_COMMUNITY_DIRS) or rel == ".github/pull_request_template.md"):
+            continue
+        files[rel] = path.read_text(encoding="utf-8").replace("{{DISCUSSIONS_URL}}", discussions_url.rstrip("/"))
+    return files
+
+
 def managed_block() -> str:
     m = BLOCK_RE.search((TEMPLATES / "CLAUDE.md").read_text(encoding="utf-8"))
     assert m, "template CLAUDE.md lacks the managed block"
@@ -190,7 +210,7 @@ class Installer:
         else:
             path.unlink()
 
-    def run(self, sha: str, visibility: str, detect: bool, prune_workflows: bool, prune_claude: bool) -> list[str]:
+    def run(self, sha: str, visibility: str, detect: bool, prune_workflows: bool, prune_claude: bool, repo: str | None = None) -> list[str]:
         wanted = caller_names(visibility)
         for name in wanted:
             self.write(f".github/workflows/{name}", caller_content(name, sha))
@@ -225,6 +245,9 @@ class Installer:
         if not (self.root / ".release-please-manifest.json").exists():
             self.write(".release-please-manifest.json", json.dumps({".": current_version(self.root)}, indent=2) + "\n")
         self.write(".github/dependabot.yml", dependabot_content(profile, self.root))
+        if visibility == "public" and repo:
+            for rel, content in community_files(f"https://github.com/{repo}/discussions", repo_level=True).items():
+                self.write(rel, content)
 
         claude_md = self.root / "CLAUDE.md"
         template = (TEMPLATES / "CLAUDE.md").read_text(encoding="utf-8")
@@ -256,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-dir", default=".")
     parser.add_argument("--sha", required=True, help="governance commit to pin (40 hex)")
     parser.add_argument("--visibility", choices=["public", "private"], default="public")
+    parser.add_argument("--repo", help="OWNER/NAME; public repos get issue forms linking to their Discussions")
     parser.add_argument("--detect-profile", action="store_true")
     parser.add_argument("--prune-workflows", action="store_true", help="remove every workflow that is not a governance caller")
     parser.add_argument("--prune-claude", action="store_true", help="remove everything in .claude/ except settings.json")
@@ -263,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not SHA_RE.match(args.sha):
         return govlib.fail("--sha must be a full 40-character lowercase commit SHA")
-    changes = Installer(Path(args.repo_dir).resolve(), args.dry_run).run(args.sha, args.visibility, args.detect_profile, args.prune_workflows, args.prune_claude)
+    changes = Installer(Path(args.repo_dir).resolve(), args.dry_run).run(args.sha, args.visibility, args.detect_profile, args.prune_workflows, args.prune_claude, args.repo)
     print("\n".join(changes) if changes else "unchanged")
     return 0
 

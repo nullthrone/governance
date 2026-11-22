@@ -128,7 +128,7 @@ def _python(root: Path, prof: dict, uncertain: list[str]) -> None:
     else:
         cmds["version"] = f"python -c \"import importlib.metadata as m; print(m.version('{name}'))\""
     cmds["set_version"] = SET_VERSION
-    if project and not scripts or (root / src / import_name / "__init__.py").exists():
+    if not scripts and (project or (root / src / import_name / "__init__.py").exists()):
         prof["profiles"].append("library")
         prof["classification"]["api"] = "griffe"
         prof["classification"]["search_path"] = src

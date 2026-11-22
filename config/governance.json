@@ -1,6 +1,10 @@
 {
   "owner": "t11z",
   "governance_repo": "nullthrone/governance",
+  "organizations": [
+    "nullthrone",
+    "sprocksystems"
+  ],
   "marketplace_name": "nullthrone-governance",
   "plugin": "governance@nullthrone-governance",
   "bot_app_slug": "nullthrone-governance",
