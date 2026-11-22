@@ -1,6 +1,6 @@
 {
   "name": "governance",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Guardrail hooks, subagents and skills for repositories governed by nullthrone/governance.",
   "author": {
     "name": "Thomas Sprock"
