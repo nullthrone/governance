@@ -117,14 +117,18 @@ if __name__ == "__main__":
 
 class NewProjectTest(unittest.TestCase):
     def test_template_passes_audit(self):
+        import os
         import tempfile
+        from unittest import mock
 
         import new_project
 
+        identity = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
         for visibility in ("public", "private"):
             with self.subTest(visibility=visibility), tempfile.TemporaryDirectory() as tmp:
                 target = Path(tmp) / "proj"
-                new_project.create(target, "acme-tool", FAKE_SHA, visibility, "o/acme-tool")
+                with mock.patch.dict(os.environ, identity):
+                    new_project.create(target, "acme-tool", FAKE_SHA, visibility, "o/acme-tool")
                 report = governance_audit.Audit(target, "o/acme-tool", "local", visibility, None).run()
                 self.assertEqual(failed(report), set(), json.dumps(report["checks"], indent=1))
                 self.assertTrue((target / "src/acme_tool/cli.py").exists())
