@@ -45,14 +45,28 @@ class ConsistencyTest(unittest.TestCase):
 
     def test_required_check_jobs_have_no_job_level_if(self):
         # A skipped job counts as success for required checks; decisions must happen in steps.
+        # Documented exception: the base-change guard caller job in governance-pr-meta.yml.
         contexts = {c["context"] for p in (ROOT / "rulesets").glob("*.json") for r in json.loads(p.read_text())["rules"] if r["type"] == "required_status_checks" for c in r["parameters"]["required_status_checks"]}
-        for doc in self.callers().values():
+        for name, doc in self.callers().items():
             for job_id, job in doc["jobs"].items():
                 called = load(WF / job["uses"].split("/")[-1].split("@")[0])
                 for called_id, called_job in called["jobs"].items():
                     if f"{job_id} / {called_job.get('name', called_id)}" in contexts:
                         self.assertNotIn("if", called_job, f"{job_id}/{called_id}")
-                        self.assertNotIn("if", job, job_id)
+                        if (name, job_id) != ("governance-pr-meta.yml", "guard"):
+                            self.assertNotIn("if", job, f"{name}:{job_id}")
+
+    def test_required_check_jobs_reject_shared_head_commits(self):
+        contexts = {c["context"] for p in (ROOT / "rulesets").glob("*.json") for r in json.loads(p.read_text())["rules"] if r["type"] == "required_status_checks" for c in r["parameters"]["required_status_checks"]}
+        via_load_pr = {"guard", "title", "docs", "wip", "gate", "candidate-approval", "review-mode", "unique-head"}
+        for doc in self.callers().values():
+            for job_id, job in doc["jobs"].items():
+                called = load(WF / job["uses"].split("/")[-1].split("@")[0])
+                for called_id, called_job in called["jobs"].items():
+                    if f"{job_id} / {called_job.get('name', called_id)}" not in contexts:
+                        continue
+                    runs = " ".join(str(step.get("run", "")) for step in called_job["steps"])
+                    self.assertTrue(any(f"checks.py\" {cmd}" in runs for cmd in via_load_pr), f"{job_id}/{called_id}")
 
     def test_secrets_passed_match_declared(self):
         for name, doc in self.callers().items():

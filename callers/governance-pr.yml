@@ -12,6 +12,7 @@ jobs:
     uses: nullthrone/governance/.github/workflows/ci.yml@__GOVERNANCE_SHA__
     permissions:
       contents: read
+      pull-requests: read
   guard:
     uses: nullthrone/governance/.github/workflows/governance-guard.yml@__GOVERNANCE_SHA__
     permissions:

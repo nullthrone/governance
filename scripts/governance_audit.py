@@ -224,6 +224,9 @@ class Audit:
             problems.append("managed governance block missing")
         elif block.group(0) != install.managed_block():
             problems.append("managed governance block differs from the template")
+        local = sorted(p.relative_to(self.root).as_posix() for p in self.root.rglob("CLAUDE.local.md") if ".git" not in p.parts)
+        if local:
+            problems.append(f"CLAUDE.local.md files override the managed rules: {', '.join(local)}")
         rest = install.BLOCK_RE.sub("", text)
         for pattern, why in CONTRADICTING_RULES:
             if pattern.search(rest):
@@ -311,12 +314,23 @@ class Audit:
             live = govlib.gh_api(f"repos/{self.repo}/rulesets/{listed[template['name']]}")
             if live.get("enforcement") != "active":
                 problems.append(f"{template['name']} not active")
-            if live.get("conditions", {}).get("ref_name", {}).get("include") != template["conditions"]["ref_name"]["include"]:
-                problems.append(f"{template['name']} targets other refs")
+            live_ref = live.get("conditions", {}).get("ref_name", {})
+            want_ref = template["conditions"]["ref_name"]
+            if sorted(live_ref.get("include") or []) != sorted(want_ref["include"]) or sorted(live_ref.get("exclude") or []) != sorted(want_ref["exclude"]):
+                problems.append(f"{template['name']} targets other refs (include/exclude)")
+            if live.get("target") != template["target"]:
+                problems.append(f"{template['name']} has target {live.get('target')!r}")
             live_rules = {r["type"]: r.get("parameters", {}) for r in live.get("rules", [])}
             for rule in template["rules"]:
                 if rule["type"] not in live_rules:
                     problems.append(f"{template['name']}: rule {rule['type']} missing")
+                    continue
+                for key, value in (rule.get("parameters") or {}).items():
+                    if key == "required_status_checks":
+                        continue
+                    have = live_rules[rule["type"]].get(key)
+                    if (sorted(have) if isinstance(have, list) else have) != (sorted(value) if isinstance(value, list) else value):
+                        problems.append(f"{template['name']}: {rule['type']}.{key} is {have!r}, want {value!r}")
             if "required_status_checks" in {r["type"] for r in template["rules"]}:
                 want = {(c["context"], c["integration_id"]) for r in template["rules"] if r["type"] == "required_status_checks" for c in r["parameters"]["required_status_checks"]}
                 have = {(c["context"], c.get("integration_id")) for c in live_rules.get("required_status_checks", {}).get("required_status_checks", [])}

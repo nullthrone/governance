@@ -9,6 +9,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  # A base change keeps old results on the head commit; this guard run fails until a new push
+  # re-runs everything. When skipped, the caller job yields no check named "guard / ...".
+  guard:
+    if: github.event.action == 'edited' && github.event.changes.base
+    uses: nullthrone/governance/.github/workflows/governance-guard.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
   classification:
     uses: nullthrone/governance/.github/workflows/classification-check.yml@__GOVERNANCE_SHA__
     permissions:

@@ -31,6 +31,7 @@
   "protected_paths": [
     ".claude/",
     "CLAUDE.md",
+    "CLAUDE.local.md",
     ".github/",
     ".governance/"
   ],

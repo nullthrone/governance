@@ -57,7 +57,7 @@ jobs:
           if git merge-base --is-ancestor origin/main origin/next; then
             echo "next already contains main"; exit 0
           fi
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base next --head main --state open --json number --jq '.[0].number // empty')
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base next --head main --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
           if [ -z "$pr" ]; then
             url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base next --head main \
               --title "chore: sync main into next" --body "Automatic sync of main into next (merge commit). Managed by nullthrone/governance.")

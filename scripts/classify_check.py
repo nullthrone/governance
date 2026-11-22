@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import checks  # noqa: E402
 import govlib  # noqa: E402
 
 
@@ -145,6 +146,12 @@ def compare(base: dict, head: dict) -> list[str]:
     return problems
 
 
+def local_diff_items(repo_dir: str, base_sha: str) -> list[dict]:
+    """Changed files with unified diffs (like the PR files API) from the local checkout."""
+    names = govlib.run(["git", "diff", "--name-only", f"{base_sha}...HEAD"], cwd=repo_dir).stdout.split()
+    return [{"filename": n, "patch": govlib.run(["git", "diff", "-U0", f"{base_sha}...HEAD", "--", n], cwd=repo_dir).stdout} for n in names]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-dir", default=".")
@@ -159,12 +166,17 @@ def main(argv: list[str] | None = None) -> int:
     base_ref = args.base_ref or (pr.get("base") or {}).get("ref", "")
     head_ref = args.head_ref or (pr.get("head") or {}).get("ref", "")
     base_sha = args.base_sha or (pr.get("base") or {}).get("sha")
+    head_repo = ((pr.get("head") or {}).get("repo") or {}).get("full_name")
+    same_repo = head_repo is None or head_repo == os.environ.get("GITHUB_REPOSITORY", head_repo)
 
     if base_ref != "main":
         govlib.summary("✅ Not a PR into main; classification check not applicable.")
         return 0
-    if head_ref == "next" or head_ref.startswith("release-please--"):
-        govlib.summary("✅ Candidate or release PR; classification check not applicable.")
+    if same_repo and head_ref == "next":
+        govlib.summary("✅ Candidate PR; classification check not applicable.")
+        return 0
+    if same_repo and head_ref.startswith("release-please--") and checks.version_only_diff(local_diff_items(args.repo_dir, base_sha)):
+        govlib.summary("✅ release-please PR with version and changelog changes only.")
         return 0
     if govlib.is_feat(title):
         return govlib.fail("feat PRs must target next (see pr-title check).")

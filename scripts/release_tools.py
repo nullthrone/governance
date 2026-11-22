@@ -5,13 +5,14 @@
   version-smoke    run the profile's version command and require the expected version in its output
   previous-tag     stable tag released before the given tag (rollback target)
   candidate-body   body of the candidate PR next -> main
+  release-gate     may the release PR auto-merge? Patches yes; minor/major only after an
+                   owner-accepted candidate merge since the last release
 """
 from __future__ import annotations
 
 import argparse
 import json
 import re
-import shlex
 import sys
 from pathlib import Path
 
@@ -97,6 +98,29 @@ def candidate_body(version: str, features: list[dict], preview: str, screenshots
     return "\n".join(lines)
 
 
+def bump_kind(previous: str | None, new: str) -> str:
+    old = parse_tag(previous) if previous else (0, 0, 0, None)
+    cur = parse_tag(new)
+    if cur is None or old is None:
+        return "unknown"
+    if cur[0] != old[0]:
+        return "major"
+    if cur[1] != old[1]:
+        return "minor"
+    return "patch"
+
+
+def accepted_candidate(merged_candidates: list[dict], reviews_by_pr: dict[int, list[dict]], owner: str, since: str | None) -> int | None:
+    """Number of a candidate PR merged after `since` whose latest owner review approved its final head."""
+    for pr in merged_candidates:
+        if not pr.get("merged_at") or (since and pr["merged_at"] <= since):
+            continue
+        reviews = sorted((r for r in reviews_by_pr.get(pr["number"], []) if (r.get("user") or {}).get("login") == owner and r.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")), key=lambda r: r.get("submitted_at") or "")
+        if reviews and reviews[-1]["state"] == "APPROVED" and reviews[-1].get("commit_id") == pr["head"]["sha"]:
+            return pr["number"]
+    return None
+
+
 def git_tags(repo_dir: str) -> list[str]:
     govlib.run(["git", "fetch", "--tags", "--quiet", "origin"], cwd=repo_dir)
     return [t for t in govlib.git("tag", "--list", cwd=repo_dir).splitlines() if t]
@@ -160,6 +184,37 @@ def cmd_candidate_body(args) -> int:
     return 0
 
 
+def cmd_release_gate(args) -> int:
+    repo = args.repo
+    owner = govlib.load_config()["owner"]
+    pr = govlib.gh_api(f"repos/{repo}/pulls/{args.pr}")
+    m = re.search(r"(\d+\.\d+\.\d+)\s*$", pr.get("title", ""))
+    if not m:
+        govlib.set_output("allowed", "false")
+        return govlib.fail(f"Cannot read the version from the release PR title {pr.get('title')!r}.")
+    try:
+        latest = govlib.gh_api(f"repos/{repo}/releases/latest")
+        previous, since = latest.get("tag_name"), latest.get("published_at")
+    except govlib.GhError:
+        previous, since = None, None
+    kind = bump_kind(previous, m.group(1))
+    if kind == "patch":
+        govlib.set_output("allowed", "true")
+        govlib.summary(f"✅ Patch release {m.group(1)}: auto-merge allowed.")
+        return 0
+    closed = govlib.gh_api(f"repos/{repo}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100", paginate=True)
+    candidates = [p for p in closed if p["head"]["ref"] == "next" and (p["head"].get("repo") or {}).get("full_name") == repo and p.get("merged_at")]
+    reviews = {p["number"]: govlib.gh_api(f"repos/{repo}/pulls/{p['number']}/reviews?per_page=100", paginate=True) for p in candidates if not since or p["merged_at"] > since}
+    accepted = accepted_candidate(candidates, reviews, owner, since)
+    if accepted:
+        govlib.set_output("allowed", "true")
+        govlib.summary(f"✅ {kind} release {m.group(1)} backed by owner-accepted candidate #{accepted}.")
+        return 0
+    govlib.set_output("allowed", "false")
+    govlib.summary(f"⛔ {kind} release {m.group(1)} without an owner-accepted candidate since {previous or 'the beginning'}; auto-merge withheld.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-dir", default=".")
@@ -178,12 +233,16 @@ def main(argv: list[str] | None = None) -> int:
     cb.add_argument("--screenshots", default="")
     cb.add_argument("--run-url", default="")
     cb.add_argument("--output", required=True)
+    rg = sub.add_parser("release-gate")
+    rg.add_argument("--repo", required=True)
+    rg.add_argument("--pr", required=True, type=int)
     args = parser.parse_args(argv)
     return {
         "rc-version": cmd_rc_version,
         "version-smoke": cmd_version_smoke,
         "previous-tag": cmd_previous_tag,
         "candidate-body": cmd_candidate_body,
+        "release-gate": cmd_release_gate,
     }[args.cmd](args)
 
 

@@ -49,6 +49,7 @@ The official Claude GitHub App requests **Workflows: read and write**, so it is 
 ## 7. Hardening of this repository
 
 - [ ] Ruleset on `main` of `nullthrone/governance`: PR required, status check `test` (self-ci), no force push, no deletion.
+- [ ] Never approve the workflow run of a fork PR that changes `.github/`: its own workflow copy could report fake check results.
 - [ ] Pin third-party actions to commit SHAs (for example with `pinact run` locally) for the OpenSSF Scorecard "Pinned-Dependencies" check; Dependabot keeps them current afterwards. Bump `ossf/scorecard-action` in `callers/scorecard.yml` to the latest 2.x release.
 
 ## 8. First end-to-end run on GitHub
@@ -57,7 +58,7 @@ The self-verification in this session ran against a local repository only (no Gi
 
 - [ ] Create a throwaway repository, e.g. `nullthrone/governance-sandbox` (public), from `scripts/new_project.py` or with some legacy content.
 - [ ] Run `prompts/onboard.md` there locally with your `gh` login; the audit must pass in full mode (`python3 scripts/governance_audit.py --repo-dir . --repo nullthrone/governance-sandbox`).
-- [ ] Exercise the flow once: issue → `po:ready` (by you) → `governance-schedule` with task `roadmap` → PR into next → candidate PR → approve → release. Watch especially: required check names, `job.workflow_sha` checkout, app-token identity of `claude-code-action`, release-please PR auto-merge.
+- [ ] Exercise the flow once: issue → `po:ready` (by you) → `governance-schedule` with task `roadmap` → PR into next → candidate PR → approve → release. Watch especially: required check names, `job.workflow_sha` checkout, app-token identity of `claude-code-action`, release-please PR auto-merge and the release gate, and that `governance-guard` can read the repository activity API with `GITHUB_TOKEN` (it fails closed for protected-path PRs otherwise; if needed, disable the ruleset briefly to land the fix).
 - [ ] Delete the sandbox afterwards.
 
 ## Verified in this session

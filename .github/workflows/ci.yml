@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -27,6 +28,10 @@ jobs:
           persist-credentials: false
       - name: Move governance tooling out of the workspace
         run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Only open PR with this head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" unique-head
       - name: Read profile
         id: profile
         run: python3 "$GOV/scripts/profile.py" outputs
@@ -79,7 +84,21 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      pull-requests: read
     steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Only open PR with this head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" unique-head
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

@@ -5,6 +5,7 @@
 #   skip    promotion PRs (main<->next), release-please PRs, dependency bots: deterministic checks only
 #   fork    fork PRs are never merged directly; after the owner's approval Claude ports them
 #   limit   too many rounds; labeled blocked
+#   duplicate  another open PR shares the head commit; results would apply to it too
 name: review
 on:
   workflow_call:
@@ -41,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 "$GOV/scripts/checks.py" review-mode
       - name: Not reviewable
-        if: steps.mode.outputs.mode == 'fork' || steps.mode.outputs.mode == 'limit'
+        if: steps.mode.outputs.mode == 'fork' || steps.mode.outputs.mode == 'limit' || steps.mode.outputs.mode == 'duplicate'
         run: |
           echo "::error::Review mode '${{ steps.mode.outputs.mode }}' — see the step summary."
           exit 1

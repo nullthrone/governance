@@ -54,7 +54,7 @@ jobs:
           git fetch --quiet --tags origin main next
           count=$(git rev-list --count origin/main..origin/next)
           echo "count=$count" >> "$GITHUB_OUTPUT"
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head next --state open --json number --jq '.[0].number // empty')
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head next --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           if [ "$count" = "0" ] && [ -n "$pr" ]; then
             gh pr close "$pr" --repo "$GITHUB_REPOSITORY" --comment "Nothing left to release on next."
@@ -160,6 +160,7 @@ jobs:
             --preview "$preview" --screenshots "$shots" --run-url "$run_url" --output "$RUNNER_TEMP/body.md"
       - name: Create or update candidate PR
         if: steps.state.outputs.count != '0'
+        id: candidate
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           VERSION: ${{ steps.rc.outputs.version }}
@@ -176,6 +177,7 @@ jobs:
             url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head next --title "$title" --body-file "$RUNNER_TEMP/body.md")
             pr="${url##*/}"
           fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
           gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge || true
           # Milestone = candidate
           ms=$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=open&per_page=100" --jq ".[] | select(.title==\"v$base\") | .number")
@@ -188,7 +190,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           APP_TOKEN: ${{ steps.app.outputs.token }}
+          NUMBER: ${{ steps.candidate.outputs.number }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "PROJECT_TOKEN not set; skipped."; exit 0; fi
-          node=$(GH_TOKEN="$APP_TOKEN" gh pr view next --repo "$GITHUB_REPOSITORY" --json id --jq .id)
+          node=$(GH_TOKEN="$APP_TOKEN" gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
           python3 "$GOV/scripts/po_inbox.py" add --node-id "$node"

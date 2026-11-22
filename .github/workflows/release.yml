@@ -46,14 +46,40 @@ jobs:
           target-branch: main
           config-file: .governance/release-please-config.json
           manifest-file: .release-please-manifest.json
-      - name: Auto-merge release PR
+      - name: Checkout governance (pinned)
         if: steps.rp.outputs.pr != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Release gate (minor/major only after an owner-accepted candidate)
+        if: steps.rp.outputs.pr != ''
+        id: gate
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_JSON: ${{ steps.rp.outputs.pr }}
         run: |
           number=$(jq -r '.number' <<<"$PR_JSON")
-          gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --auto --squash
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          python3 .governance-src/scripts/release_tools.py release-gate --repo "$GITHUB_REPOSITORY" --pr "$number"
+      - name: Auto-merge release PR
+        if: steps.gate.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          NUMBER: ${{ steps.gate.outputs.number }}
+        run: gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash
+      - name: Hand the release to the owner
+        if: steps.gate.outputs.allowed == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          NUMBER: ${{ steps.gate.outputs.number }}
+        run: |
+          labels=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")')
+          case ",$labels," in *,po:decision,*) exit 0 ;; esac
+          gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --add-label po:decision
+          gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "This release bumps the minor or major version without an owner-accepted candidate since the last release. Auto-merge is withheld; the owner decides."
 
   publish:
     name: publish
