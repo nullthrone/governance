@@ -3,7 +3,9 @@
   "governance_repo": "nullthrone/governance",
   "organizations": [
     "nullthrone",
-    "sprocksystems"
+    "sprocksystems",
+    "elunea",
+    "cinewright"
   ],
   "po_inbox": {
     "owner": "t11z",
