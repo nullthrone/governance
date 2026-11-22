@@ -1,0 +1,16 @@
+{
+  "name": "nullthrone-governance",
+  "owner": {
+    "name": "Thomas Sprock"
+  },
+  "metadata": {
+    "description": "Claude-native governance for all projects of the owner."
+  },
+  "plugins": [
+    {
+      "name": "governance",
+      "source": "./plugins/governance",
+      "description": "Guardrail hooks, subagents (triager, reviewer, implementer, doc-writer) and skills for governed repositories."
+    }
+  ]
+}
