@@ -1,0 +1,54 @@
+{
+  "owner": "t11z",
+  "governance_repo": "nullthrone/governance",
+  "marketplace_name": "nullthrone-governance",
+  "plugin": "governance@nullthrone-governance",
+  "bot_app_slug": "nullthrone-governance",
+  "bots": [
+    "nullthrone-governance[bot]",
+    "github-actions[bot]",
+    "dependabot[bot]",
+    "renovate[bot]"
+  ],
+  "models": {
+    "small": "haiku",
+    "medium": "sonnet",
+    "large": "opus"
+  },
+  "wip_limit": 3,
+  "candidate_reminder_days": 14,
+  "fuzz_minutes_per_target": 30,
+  "review_max_rounds": 3,
+  "stale_bot_pr_days": 30,
+  "protected_paths": [
+    ".claude/",
+    "CLAUDE.md",
+    ".github/",
+    ".governance/"
+  ],
+  "commit_types": {
+    "main": [
+      "fix",
+      "refactor",
+      "chore",
+      "docs",
+      "test",
+      "ci",
+      "perf",
+      "build",
+      "revert"
+    ],
+    "next": [
+      "feat",
+      "fix",
+      "refactor",
+      "chore",
+      "docs",
+      "test",
+      "ci",
+      "perf",
+      "build",
+      "revert"
+    ]
+  }
+}
