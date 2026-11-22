@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
 import urllib.error
 import urllib.request
@@ -428,8 +429,8 @@ class Audit:
         if self.visibility != "public":
             self.add("scorecard", "skip", "private repository")
             return
-        proc = govlib.run(["scorecard", f"--repo=github.com/{self.repo}", "--format=json"])
-        if proc.returncode == 0 and proc.stdout.strip().startswith("{"):
+        proc = govlib.run(["scorecard", f"--repo=github.com/{self.repo}", "--format=json"]) if shutil.which("scorecard") else None
+        if proc is not None and proc.returncode == 0 and proc.stdout.strip().startswith("{"):
             self.scorecard = json.loads(proc.stdout)
         else:
             url = f"https://api.securityscorecards.dev/projects/github.com/{self.repo}"

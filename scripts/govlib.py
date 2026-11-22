@@ -417,7 +417,10 @@ def gh_authenticated() -> bool:
 def run(cmd: str | list[str], cwd: str | Path | None = None, check: bool = False, env: dict | None = None, timeout: int | None = None) -> subprocess.CompletedProcess:
     shell = isinstance(cmd, str)
     full_env = {**os.environ, **(env or {})}
-    return subprocess.run(cmd, cwd=cwd, shell=shell, capture_output=True, text=True, check=check, env=full_env, timeout=timeout)
+    try:
+        return subprocess.run(cmd, cwd=cwd, shell=shell, capture_output=True, text=True, check=check, env=full_env, timeout=timeout)
+    except FileNotFoundError as exc:  # missing binary: behave like a shell (exit 127)
+        return subprocess.CompletedProcess(cmd, 127, "", str(exc))
 
 
 def git(*args: str, cwd: str | Path = ".") -> str:
