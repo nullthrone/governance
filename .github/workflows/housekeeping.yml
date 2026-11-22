@@ -16,6 +16,8 @@ on:
         required: true
       GOVERNANCE_APP_PRIVATE_KEY:
         required: true
+      PROJECT_TOKEN:
+        required: false
 
 permissions: {}
 
@@ -174,6 +176,17 @@ jobs:
             --plugin-dir ${{ env.GOV }}/plugins/governance
             --max-turns 100
             --allowedTools "${{ steps.tools.outputs.allowed }}"
+
+      - name: Add pre-qualified fork PR to the PO inbox
+        if: steps.check.outputs.run == 'true' && matrix.task == 'fork-prequal'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "PROJECT_TOKEN not set; skipped."; exit 0; fi
+          pr=$(jq -r .pr "$RUNNER_TEMP/housekeeping-vars.json")
+          node=$(GH_TOKEN="$APP_TOKEN" gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
+          python3 "$GOV/scripts/po_inbox.py" add --node-id "$node"
 
   deterministic:
     name: deterministic

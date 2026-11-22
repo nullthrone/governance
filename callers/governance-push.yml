@@ -55,6 +55,7 @@ jobs:
       id-token: write
     secrets:
       GOVERNANCE_APP_PRIVATE_KEY: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
   docs-preview:
     if: github.ref == 'refs/heads/next'
     uses: nullthrone/governance/.github/workflows/docs.yml@__GOVERNANCE_SHA__

@@ -5,6 +5,10 @@
     "nullthrone",
     "sprocksystems"
   ],
+  "po_inbox": {
+    "owner": "t11z",
+    "project_number": 0
+  },
   "marketplace_name": "nullthrone-governance",
   "plugin": "governance@nullthrone-governance",
   "bot_app_slug": "nullthrone-governance",

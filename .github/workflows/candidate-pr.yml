@@ -8,6 +8,8 @@ on:
     secrets:
       GOVERNANCE_APP_PRIVATE_KEY:
         required: true
+      PROJECT_TOKEN:
+        required: false
 
 permissions: {}
 
@@ -181,3 +183,12 @@ jobs:
           for n in $pr $PR_NUMBERS; do
             gh pr edit "$n" --repo "$GITHUB_REPOSITORY" --milestone "v$base" || true
           done
+      - name: Add candidate to the PO inbox
+        if: steps.state.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "PROJECT_TOKEN not set; skipped."; exit 0; fi
+          node=$(GH_TOKEN="$APP_TOKEN" gh pr view next --repo "$GITHUB_REPOSITORY" --json id --jq .id)
+          python3 "$GOV/scripts/po_inbox.py" add --node-id "$node"
