@@ -1,0 +1,51 @@
+# Managed by nullthrone/governance. Do not edit: changes come only from the owner via onboarding.
+name: governance-pr
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    uses: nullthrone/governance/.github/workflows/ci.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  guard:
+    uses: nullthrone/governance/.github/workflows/governance-guard.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  classification:
+    uses: nullthrone/governance/.github/workflows/classification-check.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+  docs:
+    uses: nullthrone/governance/.github/workflows/docs-required.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  wip:
+    uses: nullthrone/governance/.github/workflows/wip-limit.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  gate:
+    uses: nullthrone/governance/.github/workflows/external-contribution-gate.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  review:
+    needs: ci
+    uses: nullthrone/governance/.github/workflows/review.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOVERNANCE_APP_PRIVATE_KEY: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}

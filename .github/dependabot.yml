@@ -1,0 +1,10 @@
+# Keeps third-party action versions in the governance workflows current. The owner merges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope

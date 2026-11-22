@@ -1,0 +1,115 @@
+# Reusable CI driven by .governance/profile.yml. Called by governance-pr.yml in project repos.
+name: ci
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  build-test:
+    name: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Only open PR with this head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" unique-head
+      - name: Read profile
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - uses: actions/setup-python@v6
+        if: steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.profile.outputs.language == 'node'
+        with:
+          node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal -c clippy,rustfmt && rustup default "$TOOLCHAIN"
+      - name: Setup
+        run: python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+      - name: Lint
+        run: python3 "$GOV/scripts/profile.py" run commands.lint --allow-missing
+      - name: Build
+        run: python3 "$GOV/scripts/profile.py" run commands.build --allow-missing
+      - name: Test
+        run: python3 "$GOV/scripts/profile.py" run commands.test
+      - name: Doctests and examples
+        run: python3 "$GOV/scripts/profile.py" run commands.doctest --allow-missing
+      - name: Version smoke test
+        run: python3 "$GOV/scripts/release_tools.py" version-smoke --expected-from-manifest
+      - name: End-to-end tests
+        if: steps.profile.outputs.has_e2e == 'true'
+        run: python3 "$GOV/scripts/profile.py" run commands.e2e
+      - name: Upload E2E results and screenshots
+        if: always() && steps.profile.outputs.has_e2e == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  sast:
+    name: sast
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Only open PR with this head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" unique-head
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Semgrep (blocking on ERROR severity)
+        run: pipx run semgrep scan --config p/default --severity ERROR --error --metrics off --sarif --output semgrep.sarif
+      - name: Upload SARIF for the review agent
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          if-no-files-found: ignore
+          retention-days: 7

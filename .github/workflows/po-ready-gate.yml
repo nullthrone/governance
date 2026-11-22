@@ -1,0 +1,29 @@
+# po:ready counts only if the owner applied it (issue timeline). Otherwise the label is removed.
+name: po-ready-gate
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  po-ready-gate:
+    name: po-ready-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Verify actor of po:ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" po-ready --enforce

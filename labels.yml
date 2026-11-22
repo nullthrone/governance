@@ -1,0 +1,53 @@
+# Label taxonomy for all governed repositories. Synced by scripts/sync_labels.py (label-sync workflow).
+# po:* labels are never set by issue templates; po:ready counts only when the owner applied it.
+- name: po:ready
+  color: "0e8a16"
+  description: Released for implementation by the owner
+- name: po:decision
+  color: "d93f0b"
+  description: Needs a decision by the owner
+- name: po:review
+  color: "fbca04"
+  description: External PR pre-qualified by Claude, waiting for the owner
+- name: docs:none
+  color: "c5def5"
+  description: Feature without user-doc change; reason in the PR body
+- name: type:bug
+  color: "d73a4a"
+  description: Something does not work as documented
+- name: type:feature
+  color: "a2eeef"
+  description: New capability for users
+- name: type:docs
+  color: "0075ca"
+  description: Documentation only
+- name: type:chore
+  color: "ededed"
+  description: Maintenance, refactoring, tooling
+- name: type:security
+  color: "b60205"
+  description: Security issue or hardening
+- name: needs-info
+  color: "d876e3"
+  description: Waiting for information from the reporter
+- name: duplicate
+  color: "cfd3d7"
+  description: Already tracked elsewhere
+- name: idea
+  color: "f9d0c4"
+  description: Belongs in Discussions → Ideas
+- name: in-progress
+  color: "1d76db"
+  description: Picked up by Claude
+- name: blocked
+  color: "000000"
+  description: Automation stopped; see the latest comment
+- name: adopting
+  color: "5319e7"
+  description: Approved external PR being ported by Claude
+- name: dependencies
+  color: "0366d6"
+  description: Dependency update
+- name: automation:rollback
+  color: "e11d21"
+  description: Opened by an automatic production rollback

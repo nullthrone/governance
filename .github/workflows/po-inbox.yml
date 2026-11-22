@@ -1,0 +1,39 @@
+# Adds po:decision issues, po:review fork PRs and candidate PRs to the owner's PO inbox project.
+# Optional: skipped while the secret PROJECT_TOKEN (classic PAT with `project` scope) is not set.
+name: po-inbox
+on:
+  workflow_call:
+    inputs:
+      node_id:
+        type: string
+        required: true
+    secrets:
+      PROJECT_TOKEN:
+        required: false
+
+permissions: {}
+
+jobs:
+  add:
+    name: add
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Add to PO inbox
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          NODE_ID: ${{ inputs.node_id }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "PROJECT_TOKEN not set; PO inbox auto-add skipped (docs/MANUAL-STEPS.md)."; exit 0; fi
+          python3 "$GOV/scripts/po_inbox.py" add --node-id "$NODE_ID"

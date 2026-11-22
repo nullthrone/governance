@@ -1,0 +1,35 @@
+# Managed by nullthrone/governance. Do not edit: changes come only from the owner via onboarding.
+# Title and label changes re-run only the cheap checks that depend on them.
+name: governance-pr-meta
+on:
+  pull_request:
+    types: [edited, labeled, unlabeled]
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  # A base change keeps old results on the head commit; this guard run fails until a new push
+  # re-runs everything. When skipped, the caller job yields no check named "guard / ...".
+  guard:
+    if: github.event.action == 'edited' && github.event.changes.base
+    uses: nullthrone/governance/.github/workflows/governance-guard.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  classification:
+    uses: nullthrone/governance/.github/workflows/classification-check.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+  docs:
+    uses: nullthrone/governance/.github/workflows/docs-required.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read
+  wip:
+    uses: nullthrone/governance/.github/workflows/wip-limit.yml@__GOVERNANCE_SHA__
+    permissions:
+      contents: read
+      pull-requests: read

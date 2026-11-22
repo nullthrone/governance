@@ -1,0 +1,1 @@
+The public API of {repo} changed in the last 7 days (diff below). Bring the user documentation on main in line with the released API, following skill `diataxis-docs`. Open one `docs` PR into main. Do not document anything that exists only on next.

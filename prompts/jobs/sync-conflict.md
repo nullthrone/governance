@@ -1,0 +1,1 @@
+Merging main into next in {repo} conflicts. Create branch `claude/sync-{sha}` from next, merge origin/main into it, resolve the conflicts preserving both intents, run lint and tests, push, and open a PR into next titled `chore: sync main into next`. Enable auto-merge with merge commits (`gh pr merge --auto --merge`).

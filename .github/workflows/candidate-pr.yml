@@ -1,0 +1,197 @@
+# Keeps exactly one acceptance PR next -> main open while next holds unreleased commits.
+# Per push to next: RC tag, preview (deployment / TestPyPI / build artifact), screenshots,
+# PR body (changes, preview link, test script from the feature PRs, screenshots), milestone.
+# Auto-merge (merge commit) is enabled; candidate-approval stays red until the owner approves the head.
+name: candidate-pr
+on:
+  workflow_call:
+    secrets:
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: true
+      PROJECT_TOKEN:
+        required: false
+
+permissions: {}
+
+jobs:
+  candidate:
+    name: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: candidate-pr-${{ github.repository }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      id-token: write # TestPyPI trusted publishing for library previews
+    steps:
+      - name: Governance app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Checkout next
+        uses: actions/checkout@v6
+        with:
+          ref: next
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Unreleased commits on next
+        id: state
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          git fetch --quiet --tags origin main next
+          count=$(git rev-list --count origin/main..origin/next)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head next --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          if [ "$count" = "0" ] && [ -n "$pr" ]; then
+            gh pr close "$pr" --repo "$GITHUB_REPOSITORY" --comment "Nothing left to release on next."
+          fi
+      - name: Read profile
+        if: steps.state.outputs.count != '0'
+        id: profile
+        run: python3 "$GOV/scripts/profile.py" outputs
+      - name: Release-candidate version
+        if: steps.state.outputs.count != '0'
+        id: rc
+        run: python3 "$GOV/scripts/release_tools.py" rc-version
+      - name: Tag release candidate
+        if: steps.state.outputs.count != '0'
+        env:
+          TAG: ${{ steps.rc.outputs.tag }}
+        run: git tag "$TAG" origin/next && git push origin "refs/tags/$TAG"
+
+      - uses: actions/setup-python@v6
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.language == 'python'
+        with:
+          python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
+      - uses: actions/setup-node@v5
+        if: steps.state.outputs.count != '0' && (steps.profile.outputs.language == 'node' || steps.profile.outputs.is_web == 'true')
+        with:
+          node-version: ${{ steps.profile.outputs.language == 'node' && steps.profile.outputs.runtime_version || '22' }}
+      - uses: actions/setup-go@v6
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.language == 'go'
+        with:
+          go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+      - name: Set up Rust
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.language == 'rust'
+        env:
+          TOOLCHAIN: ${{ steps.profile.outputs.runtime_version || 'stable' }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal && rustup default "$TOOLCHAIN"
+      - name: Build preview with RC version
+        if: steps.state.outputs.count != '0'
+        env:
+          VERSION: ${{ steps.rc.outputs.version }}
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.set_version --allow-missing --env "VERSION=$VERSION"
+          python3 "$GOV/scripts/profile.py" run commands.setup --allow-missing
+          python3 "$GOV/scripts/profile.py" run commands.build --allow-missing
+      - name: Deploy preview
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.preview_type == 'deployment'
+        id: deploy
+        env:
+          VERSION: ${{ steps.rc.outputs.version }}
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.deploy_preview --env "VERSION=$VERSION" | tee "$RUNNER_TEMP/preview.log"
+          echo "url=$(grep -Eo 'https://[^ ]+' "$RUNNER_TEMP/preview.log" | tail -n1)" >> "$GITHUB_OUTPUT"
+      - name: Publish pre-release to TestPyPI
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.preview_type == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+      - name: Upload preview artifact
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.preview_type == 'artifact' && steps.profile.outputs.artifacts != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: preview-${{ steps.rc.outputs.version }}
+          path: ${{ steps.profile.outputs.artifacts }}
+          retention-days: 30
+      - name: Screenshots
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.is_web == 'true'
+        id: shots
+        env:
+          VERSION: ${{ steps.rc.outputs.version }}
+        run: |
+          python3 "$GOV/scripts/profile.py" run commands.screenshots --allow-missing --env "VERSION=$VERSION"
+          dir=$(python3 "$GOV/scripts/profile.py" get docs.screenshots_dir --default docs/assets/screenshots)
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Upload screenshots
+        if: steps.state.outputs.count != '0' && steps.profile.outputs.is_web == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: screenshots-${{ steps.rc.outputs.version }}
+          path: ${{ steps.shots.outputs.dir }}
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Compose candidate PR body
+        if: steps.state.outputs.count != '0'
+        id: body
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          VERSION: ${{ steps.rc.outputs.version }}
+          PREVIEW_TYPE: ${{ steps.profile.outputs.preview_type }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          IS_WEB: ${{ steps.profile.outputs.is_web }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          name=$(python3 "$GOV/scripts/profile.py" get package.name)
+          case "$PREVIEW_TYPE" in
+            deployment) preview="Preview deployment: ${DEPLOY_URL:-see $run_url}" ;;
+            testpypi) preview="Pre-release on TestPyPI: https://test.pypi.org/project/$name/$VERSION/ (\`pip install -i https://test.pypi.org/simple/ $name==$VERSION\`)" ;;
+            *) preview="Build artifact \`preview-$VERSION\`: $run_url" ;;
+          esac
+          shots=""
+          if [ "$IS_WEB" = "true" ]; then shots="Artifact \`screenshots-$VERSION\`: $run_url"; fi
+          python3 "$GOV/scripts/release_tools.py" candidate-body --repo "$GITHUB_REPOSITORY" --version "$VERSION" \
+            --preview "$preview" --screenshots "$shots" --run-url "$run_url" --output "$RUNNER_TEMP/body.md"
+      - name: Create or update candidate PR
+        if: steps.state.outputs.count != '0'
+        id: candidate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          VERSION: ${{ steps.rc.outputs.version }}
+          EXISTING: ${{ steps.state.outputs.pr }}
+          PR_NUMBERS: ${{ steps.body.outputs.pr_numbers }}
+        run: |
+          set -euo pipefail
+          base="${VERSION%%-rc.*}"
+          title="Release candidate v$VERSION"
+          if [ -n "$EXISTING" ]; then
+            pr="$EXISTING"
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head next --title "$title" --body-file "$RUNNER_TEMP/body.md")
+            pr="${url##*/}"
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+          gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge || true
+          # Milestone = candidate
+          ms=$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=open&per_page=100" --jq ".[] | select(.title==\"v$base\") | .number")
+          if [ -z "$ms" ]; then gh api -X POST "repos/$GITHUB_REPOSITORY/milestones" -f title="v$base" >/dev/null; fi
+          for n in $pr $PR_NUMBERS; do
+            gh pr edit "$n" --repo "$GITHUB_REPOSITORY" --milestone "v$base" || true
+          done
+      - name: Add candidate to the PO inbox
+        if: steps.state.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          NUMBER: ${{ steps.candidate.outputs.number }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "PROJECT_TOKEN not set; skipped."; exit 0; fi
+          node=$(GH_TOKEN="$APP_TOKEN" gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
+          python3 "$GOV/scripts/po_inbox.py" add --node-id "$node"

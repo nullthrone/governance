@@ -1,0 +1,34 @@
+# Project parameters for nullthrone/governance. Owner-only file (protected).
+version: 1
+language: python
+runtime_version: "3.12"
+profiles:
+  - cli
+  - input-processing
+package:
+  name: "{{PROJECT_NAME}}"
+  import_name: "{{PACKAGE}}"
+  publish: none
+commands:
+  setup: python -m pip install -e ".[dev]"
+  build: python -m pip install -q build && python -m build
+  test: pytest -q
+  lint: ruff check .
+  version: "{{PROJECT_NAME}} --version"
+  set_version: python3 "$GOV/scripts/set_version.py" "$VERSION"
+classification:
+  api: none
+  surface:
+    - "{{PROJECT_NAME}} --help"
+artifacts: dist/*
+docs:
+  site: false
+  locales: []
+preview:
+  type: artifact
+housekeeping:
+  dead_code: python -m pip install -q vulture && vulture src --min-confidence 80
+  web_checks: []
+fuzz:
+  auto: true
+uncertain: []

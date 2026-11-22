@@ -1,0 +1,34 @@
+# A feature PR into next fails while next already holds wip_limit unreleased features.
+name: wip-limit
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  wip-limit:
+    name: wip-limit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Count unreleased features on next
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" wip

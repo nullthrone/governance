@@ -1,0 +1,29 @@
+# Feature PRs into next must change docs/ or a README, or carry docs:none (justified in the PR body).
+name: docs-required
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  docs-required:
+    name: docs-required
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout governance (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .governance-src
+          persist-credentials: false
+      - name: Move governance tooling out of the workspace
+        run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
+      - name: Check docs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "$GOV/scripts/checks.py" docs

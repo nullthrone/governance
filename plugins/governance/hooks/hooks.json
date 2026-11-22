@@ -1,0 +1,16 @@
+{
+  "description": "Block edits to governance-protected paths and destructive shell commands. Saves tokens; enforcement stays in CI (governance-guard).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

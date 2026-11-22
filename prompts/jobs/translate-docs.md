@@ -1,0 +1,1 @@
+Translate the built English user documentation in `{source_dir}` into these locales: {locales}. Write each translation to `{target_dir}/<locale>/` with the same structure. Translate prose only; keep code, commands, identifiers and links unchanged. Do not modify anything outside `{target_dir}`.
