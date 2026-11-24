@@ -97,7 +97,8 @@ def candidate_body(version: str, features: list[dict], preview: str, screenshots
     if not any_steps:
         lines += ["_No test steps provided by the feature PRs._", ""]
     lines += ["### Screenshots", "", screenshots or "_None for this project type._", ""]
-    lines += ["Feedback: comment on this PR; Claude corrects on `next`.", ""]
+    # No workflow reacts to PR comments; a defect becomes an issue the owner releases with po:ready.
+    lines += ["Feedback: open an issue describing the defect and label it po:ready; the fix targets next.", ""]
     return "\n".join(lines)
 
 
