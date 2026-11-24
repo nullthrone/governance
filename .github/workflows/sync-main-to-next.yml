@@ -24,17 +24,17 @@ jobs:
     steps:
       - name: Governance app token
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           token: ${{ steps.app.outputs.token }}
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -89,7 +89,7 @@ jobs:
         run: python3 "$GOV/scripts/build_prompt.py" --job sync-conflict --agent implementer --tier medium --var "repo=$GITHUB_REPOSITORY" --var "sha=$SHA"
       - name: Claude resolves conflicts
         if: steps.sync.outputs.mergeable == 'CONFLICTING'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:

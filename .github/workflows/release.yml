@@ -34,13 +34,13 @@ jobs:
     steps:
       - name: Governance app token
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: release-please
         id: rp
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           token: ${{ steps.app.outputs.token }}
           target-branch: main
@@ -48,7 +48,7 @@ jobs:
           manifest-file: .release-please-manifest.json
       - name: Checkout governance (pinned)
         if: steps.rp.outputs.pr != ''
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -97,12 +97,12 @@ jobs:
       is_library: ${{ steps.profile.outputs.is_library }}
     steps:
       - name: Checkout tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -113,16 +113,16 @@ jobs:
       - name: Read profile
         id: profile
         run: python3 "$GOV/scripts/profile.py" outputs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: steps.profile.outputs.language == 'python'
         with:
           python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.profile.outputs.language == 'node'
         with:
           node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
           registry-url: https://registry.npmjs.org
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: steps.profile.outputs.language == 'go'
         with:
           go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
@@ -141,7 +141,7 @@ jobs:
         run: python3 "$GOV/scripts/release_tools.py" version-smoke --expected "$VERSION"
       - name: Artifact attestation
         if: steps.profile.outputs.artifacts != ''
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: ${{ steps.profile.outputs.artifacts }}
       - name: Upload release assets
@@ -158,7 +158,7 @@ jobs:
           if [ ${#files[@]} -gt 0 ]; then gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"; fi
       - name: Publish to PyPI (trusted publishing)
         if: steps.profile.outputs.publish == 'pypi'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
       - name: Publish to npm (trusted publishing)
         if: steps.profile.outputs.publish == 'npm'
         run: |
@@ -167,7 +167,7 @@ jobs:
       - name: crates.io token (trusted publishing)
         if: steps.profile.outputs.publish == 'crates'
         id: crates
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: Publish to crates.io
         if: steps.profile.outputs.publish == 'crates'
         env:
@@ -184,7 +184,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -193,7 +193,7 @@ jobs:
       - name: Move governance tooling out of the workspace
         run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
       - name: Checkout tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           path: repo
@@ -220,13 +220,13 @@ jobs:
       - name: Governance app token
         if: steps.check.outcome == 'failure'
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: Checkout main for the revert
         if: steps.check.outcome == 'failure'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
           fetch-depth: 0
@@ -250,7 +250,7 @@ jobs:
             --var "repo=$GITHUB_REPOSITORY" --var "tag=$TAG" --context-file "$RUNNER_TEMP/post-release.log"
       - name: Claude reverts the breaking commit
         if: steps.check.outcome == 'failure'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:

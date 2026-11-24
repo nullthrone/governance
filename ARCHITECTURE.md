@@ -50,6 +50,7 @@ Branch and release model per project repository: `main` is released, `next` coll
 - **release-please config in `.governance/`** (protected), manifest at the repo root because every release changes it. (2026-11-22)
 - **Governance tooling is checked out at `job.workflow_sha`** (GitHub, Sept 2026; not on GHES), so callers carry one pin only. (2026-11-22)
 - **Scorecard runs as an own workflow** in public repos; scorecard-action cannot publish from a reusable workflow. It is the only non-caller workflow the audit allows. (2026-11-22)
+- **Actions are pinned by commit SHA** with the exact version as a comment (Scorecard Pinned-Dependencies); Dependabot updates both in `.github/workflows/`, `callers/scorecard.yml` by hand. (2026-11-24)
 - **Model tiers are aliases** (`haiku`/`sonnet`/`opus`) in `config/governance.json`; cost is controlled only here: frequencies, tiers, new jobs. (2026-11-22)
 - **Owner decisions (`po:decision`)**: cost (recurring job, higher frequency, larger model, paid service or dependency, monitoring), breaking changes, governance changes and audit failures, yanking releases, design system for a new docs site, publishing advisories/CVEs. (2026-11-22)
 - **Extended monitoring** (error rates, Sentry) is a per-project cost decision, not standard. (2026-11-22)
