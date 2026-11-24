@@ -397,7 +397,7 @@ class Audit:
         if self.mode == "ci":
             self.add("publish-secrets", "skip", "needs the owner's token (run the audit locally)")
             return
-        names =[s["name"] for s in govlib.gh_api(f"repos/{self.repo}/actions/secrets?per_page=100", paginate=True)]
+        names = [s["name"] for s in govlib.gh_api(f"repos/{self.repo}/actions/secrets?per_page=100", paginate=True)]
         try:
             names += [f"org:{s['name']}" for s in govlib.gh_api(f"repos/{self.repo}/actions/organization-secrets?per_page=100", paginate=True)]
         except govlib.GhError:
