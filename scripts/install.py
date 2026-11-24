@@ -76,6 +76,8 @@ def release_please_config(profile: dict) -> dict:
         "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
         "release-type": RELEASE_TYPES.get(language, "simple"),
         "include-v-in-tag": True,
+        # Tags are vX.Y.Z, matching the release-tags ruleset (refs/tags/v*) and release_tools.TAG_RE.
+        "include-component-in-tag": False,
         "bump-minor-pre-major": True,
         "changelog-sections": [
             {"type": "feat", "section": "Features"},
