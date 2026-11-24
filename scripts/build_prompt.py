@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--context-file")
     args = parser.parse_args(argv)
 
-    variables = {}
+    variables = {"owner": govlib.load_config()["owner"]}
     if args.vars_file and Path(args.vars_file).exists():
         variables.update({k: str(v) for k, v in json.loads(Path(args.vars_file).read_text(encoding="utf-8")).items()})
     variables.update(dict(item.split("=", 1) for item in args.var))
