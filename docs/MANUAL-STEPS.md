@@ -50,7 +50,7 @@ The official Claude GitHub App requests **Workflows: read and write**, so it is 
 
 - [ ] Ruleset on `main` of `nullthrone/governance`: PR required, status check `test` (self-ci), no force push, no deletion.
 - [ ] Never approve the workflow run of a fork PR that changes `.github/`: its own workflow copy could report fake check results.
-- [ ] Pin third-party actions to commit SHAs (for example with `pinact run` locally) for the OpenSSF Scorecard "Pinned-Dependencies" check; Dependabot keeps them current afterwards. Bump `ossf/scorecard-action` in `callers/scorecard.yml` to the latest 2.x release.
+- [ ] Pin third-party actions to commit SHAs (for example with `pinact run` locally) for the OpenSSF Scorecard "Pinned-Dependencies" check; Dependabot keeps them current afterwards. `callers/scorecard.yml` uses `ossf/scorecard-action@v2.5.0`: up to v2.4.x the action image lived on gcr.io, which no longer serves it.
 
 ## 8. First end-to-end run on GitHub
 

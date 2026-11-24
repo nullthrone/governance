@@ -61,5 +61,9 @@ jobs:
     uses: nullthrone/governance/.github/workflows/docs.yml@__GOVERNANCE_SHA__
     with:
       mode: preview
+    # docs.yml's deploy job (skipped in preview mode) declares pages/id-token write; GitHub checks the grant
+    # statically, so without it the whole governance-push workflow fails at startup.
     permissions:
       contents: read
+      pages: write
+      id-token: write

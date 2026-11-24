@@ -54,3 +54,19 @@ class ConventionalCommitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubprocessEncodingTest(unittest.TestCase):
+    def test_gh_and_run_decode_utf8(self):
+        # gh prints UTF-8 (label descriptions contain "→"); the Windows default code page would garble it.
+        from unittest import mock
+        import subprocess
+
+        done = subprocess.CompletedProcess([], 0, "Belongs in Discussions → Ideas", "")
+        with mock.patch.object(govlib.subprocess, "run", return_value=done) as run:
+            govlib.gh("api", "repos/o/demo/labels")
+            govlib.run(["git", "status"])
+            govlib.gh_authenticated()
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs.get("encoding"), "utf-8", call)
+            self.assertEqual(call.kwargs.get("errors"), "replace", call)

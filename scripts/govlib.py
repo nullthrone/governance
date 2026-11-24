@@ -361,8 +361,9 @@ class GhError(RuntimeError):
 
 
 def gh(*args: str, input_text: str | None = None, check: bool = True) -> str:
+    # gh and git emit UTF-8; the platform default (cp1252 on Windows) would garble names and descriptions.
     try:
-        proc = subprocess.run(["gh", *args], input=input_text, capture_output=True, text=True, check=False)
+        proc = subprocess.run(["gh", *args], input=input_text, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     except FileNotFoundError as exc:
         raise GhError("gh CLI not found") from exc
     if check and proc.returncode != 0:
@@ -405,7 +406,7 @@ def gh_graphql(query: str, **variables: Any) -> Any:
 
 def gh_authenticated() -> bool:
     try:
-        proc = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, check=False)
+        proc = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     except FileNotFoundError:
         return False
     return proc.returncode == 0
@@ -418,7 +419,9 @@ def run(cmd: str | list[str], cwd: str | Path | None = None, check: bool = False
     shell = isinstance(cmd, str)
     full_env = {**os.environ, **(env or {})}
     try:
-        return subprocess.run(cmd, cwd=cwd, shell=shell, capture_output=True, text=True, check=check, env=full_env, timeout=timeout)
+        return subprocess.run(
+            cmd, cwd=cwd, shell=shell, capture_output=True, text=True, encoding="utf-8", errors="replace", check=check, env=full_env, timeout=timeout
+        )
     except FileNotFoundError as exc:  # missing binary: behave like a shell (exit 127)
         return subprocess.CompletedProcess(cmd, 127, "", str(exc))
 
