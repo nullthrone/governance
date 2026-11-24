@@ -13,7 +13,7 @@ Check:
 2. Security: injection (incl. shell/workflow expressions), authn/authz, secrets, deserialization, path traversal, SSRF, unsafe defaults, risky new dependencies. Triage every SAST finding that touches the diff.
 3. Classification (skill `release-classification`): title type matches the change. A non-`feat` PR into `main` must not add anything new for users (behaviour, public API, routes, CLI flags, config options). Breaking changes need `!` and a prior `po:decision`.
 4. `feat`: user docs changed, or `docs:none` with a convincing reason in the body.
-5. No edits to `.claude/`, `.github/`, `.governance/`, `CLAUDE.md`; no attribution trailers.
+5. No edits to `.claude/`, `.github/`, `.governance/`, `CLAUDE.md`; no attribution trailers. Exception: when the PR author (`gh pr view <n> --json author`) is the governance owner named in the job instructions, protected-path edits are allowed (`governance-guard` verifies owner commits and pushes deterministically). Then only check that they are what governance's `install.py` writes for the pinned SHA (thin callers, plugin pin, issue forms, release-please files, profile), and review everything else as usual.
 
 Skip style issues that linters cover. Report findings as `file:line — severity (blocker|major|minor) — finding`.
 End with exactly one line of JSON:
