@@ -48,7 +48,7 @@ jobs:
           manifest-file: .release-please-manifest.json
       - name: Checkout governance (pinned)
         if: steps.rp.outputs.pr != ''
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -97,12 +97,12 @@ jobs:
       is_library: ${{ steps.profile.outputs.is_library }}
     steps:
       - name: Checkout tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
       - name: Checkout governance (pinned)
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -184,7 +184,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout governance (pinned)
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -193,7 +193,7 @@ jobs:
       - name: Move governance tooling out of the workspace
         run: mv .governance-src "$RUNNER_TEMP/gov" && echo "GOV=$RUNNER_TEMP/gov" >> "$GITHUB_ENV"
       - name: Checkout tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           path: repo
@@ -226,7 +226,7 @@ jobs:
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: Checkout main for the revert
         if: steps.check.outcome == 'failure'
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
