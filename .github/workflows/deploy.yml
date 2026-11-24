@@ -8,6 +8,17 @@ on:
       tag:
         type: string
         required: true
+    # Declared one by one (no `secrets: inherit`). Deploy credentials belong in the `production`
+    # environment, which the deploy job references directly.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GOVERNANCE_APP_PRIVATE_KEY:
+        required: true
+      ALERT_WEBHOOK_URL:
+        required: false
+      ALERT_WEBHOOK_TOKEN:
+        required: false
 
 permissions: {}
 

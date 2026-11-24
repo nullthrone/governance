@@ -46,7 +46,11 @@ jobs:
     permissions:
       contents: read
       issues: write
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOVERNANCE_APP_PRIVATE_KEY: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALERT_WEBHOOK_TOKEN: ${{ secrets.ALERT_WEBHOOK_TOKEN }}
   candidate:
     if: github.ref == 'refs/heads/next'
     uses: nullthrone/governance/.github/workflows/candidate-pr.yml@__GOVERNANCE_SHA__
