@@ -54,7 +54,7 @@ jobs:
             echo "source=$(python3 "$GOV/scripts/profile.py" get docs.source --default docs)"
             echo "i18n=$(python3 "$GOV/scripts/profile.py" get docs.i18n_dir --default docs/i18n)"
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         if: steps.profile.outputs.docs_site == 'true'
         with:
           python-version: ${{ steps.profile.outputs.language == 'python' && steps.profile.outputs.runtime_version || '3.12' }}
