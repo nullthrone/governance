@@ -160,6 +160,15 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(len(install.caller_names("private")), 6)
         self.assertEqual(len(install.caller_names("public")), 7)
 
+    def test_candidate_counts_without_sync_merges(self):
+        # Sync merges main -> next must not produce an RC tag or a candidate PR.
+        steps = load(WF / "candidate-pr.yml")["jobs"]["candidate"]["steps"]
+        state = next(s for s in steps if s.get("id") == "state")
+        self.assertIn('release_tools.py" unreleased-count', state["run"])
+        self.assertIn("gh pr close", state["run"])
+        tag = next(s for s in steps if s.get("name") == "Tag release candidate")
+        self.assertEqual(tag["if"], "steps.state.outputs.count != '0'")
+
     def test_third_party_actions_are_sha_pinned(self):
         # Scorecard Pinned-Dependencies; the comment keeps the version readable and lets Dependabot update it.
         for path in sorted(WF.glob("*.yml")) + sorted((ROOT / "callers").glob("*.yml")):
