@@ -46,7 +46,8 @@ CONTRADICTING_RULES = [
     (re.compile(r"push(?:es)?\s+(?:directly\s+)?(?:to|into)\s+main", re.IGNORECASE), "suggests pushing to main"),
     (re.compile(r"skip(?:ping)?\s+(?:the\s+)?tests", re.IGNORECASE), "suggests skipping tests"),
 ]
-PIN_RE = re.compile(r"@([0-9a-f]{40})\b")
+# Governance pin of a caller (`uses: nullthrone/governance/...@<sha>`); third-party actions carry SHA pins too.
+PIN_RE = re.compile(r"nullthrone/governance/[^@\s]+@([0-9a-f]{40})\b")
 
 
 class Audit:

@@ -160,6 +160,17 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(len(install.caller_names("private")), 6)
         self.assertEqual(len(install.caller_names("public")), 7)
 
+    def test_third_party_actions_are_sha_pinned(self):
+        # Scorecard Pinned-Dependencies; the comment keeps the version readable and lets Dependabot update it.
+        for path in sorted(WF.glob("*.yml")) + sorted((ROOT / "callers").glob("*.yml")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"^\s*-?\s*uses:\s*(\S+)(.*)$", line)
+                if not m or m.group(1).startswith("nullthrone/governance/"):
+                    continue
+                with self.subTest(file=path.name, uses=m.group(1)):
+                    self.assertRegex(m.group(1), r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+                    self.assertRegex(m.group(2), r"^\s+#\s+v\d+(\.\d+)*\s*$")
+
 
 if __name__ == "__main__":
     unittest.main()

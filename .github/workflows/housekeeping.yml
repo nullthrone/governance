@@ -36,11 +36,11 @@ jobs:
       fuzz_seconds: ${{ steps.fuzz.outputs.seconds }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -78,17 +78,17 @@ jobs:
     steps:
       - name: Governance app token
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           token: ${{ steps.app.outputs.token }}
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -99,15 +99,15 @@ jobs:
       - name: Read profile
         id: profile
         run: python3 "$GOV/scripts/profile.py" outputs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: steps.profile.outputs.language == 'python'
         with:
           python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.profile.outputs.language == 'node' || steps.profile.outputs.is_web == 'true'
         with:
           node-version: ${{ steps.profile.outputs.language == 'node' && steps.profile.outputs.runtime_version || '22' }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: steps.profile.outputs.language == 'go'
         with:
           go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
@@ -163,7 +163,7 @@ jobs:
           echo "allowed=$tools" >> "$GITHUB_OUTPUT"
       - name: Claude
         if: steps.check.outputs.run == 'true'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:
@@ -199,17 +199,17 @@ jobs:
     steps:
       - name: Governance app token
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -246,11 +246,11 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -261,15 +261,15 @@ jobs:
       - name: Read profile
         id: profile
         run: python3 "$GOV/scripts/profile.py" outputs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: steps.profile.outputs.language == 'python'
         with:
           python-version: ${{ steps.profile.outputs.runtime_version || '3.12' }}
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.profile.outputs.language == 'node'
         with:
           node-version: ${{ steps.profile.outputs.runtime_version || '22' }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: steps.profile.outputs.language == 'go'
         with:
           go-version: ${{ steps.profile.outputs.runtime_version || 'stable' }}
@@ -297,7 +297,7 @@ jobs:
         run: echo "dir=$CRASH_DIR" >> "$GITHUB_OUTPUT"
       - name: Upload crash artifacts
         if: steps.run.outcome == 'failure'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz-crash-${{ matrix.target.name }}
           path: |
@@ -307,7 +307,7 @@ jobs:
       - name: Governance app token
         if: steps.run.outcome == 'failure'
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
@@ -337,7 +337,7 @@ jobs:
             --context-file "$RUNNER_TEMP/fuzz.log"
       - name: Claude minimizes, adds regression test and fixes
         if: steps.run.outcome == 'failure'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:

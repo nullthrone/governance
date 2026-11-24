@@ -28,7 +28,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout governance (pinned)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -49,21 +49,21 @@ jobs:
 
       - name: Checkout PR
         if: steps.mode.outputs.mode == 'review'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Download SAST results
         if: steps.mode.outputs.mode == 'review'
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: semgrep-sarif
           path: ${{ runner.temp }}/sast
       - name: Read-only token for Claude
         if: steps.mode.outputs.mode == 'review'
         id: readtoken
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
@@ -81,7 +81,7 @@ jobs:
       - name: Claude review
         if: steps.mode.outputs.mode == 'review'
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.readtoken.outputs.token }}
         with:
@@ -107,7 +107,7 @@ jobs:
       - name: Write token for the implementer
         if: failure() && steps.verdict.outcome == 'failure' && steps.mode.outputs.author_is_bot == 'true'
         id: app
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
@@ -116,7 +116,7 @@ jobs:
           permission-issues: write
       - name: Checkout PR branch for fixes
         if: failure() && steps.app.outcome == 'success'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ steps.app.outputs.token }}
@@ -141,7 +141,7 @@ jobs:
             --var "pr=$PR" --var "repo=$GITHUB_REPOSITORY" --var "head=$HEAD"
       - name: Claude addresses findings
         if: failure() && steps.app.outcome == 'success'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:
