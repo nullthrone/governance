@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0](https://github.com/nullthrone/governance/compare/v1.0.0...v1.1.0) (2026-11-24)
+
+
+### Features
+
+* add organizations elunea and cinewright ([6f1d6c3](https://github.com/nullthrone/governance/commit/6f1d6c3e8a5dd0e98c960f1bf97f1b0d70cbe4ed))
+* add organizations elunea and cinewright ([3173684](https://github.com/nullthrone/governance/commit/317368402d5939115aa388cd89a853e550dd2387))
+
+
+### Bug Fixes
+
+* describe the real feedback path in candidate PRs ([#23](https://github.com/nullthrone/governance/issues/23)) ([6f2ecf5](https://github.com/nullthrone/governance/commit/6f2ecf55c695ffa5266b12a60d744fa84bfd6139)), closes [#19](https://github.com/nullthrone/governance/issues/19)
+* let owner PRs to protected paths pass the review ([#14](https://github.com/nullthrone/governance/issues/14)) ([d9b120f](https://github.com/nullthrone/governance/commit/d9b120fa2f75e9c4d4e2379d5fb33f479add2dc9))
+* open no release candidate for sync merge commits ([#21](https://github.com/nullthrone/governance/issues/21)) ([c89a452](https://github.com/nullthrone/governance/commit/c89a4525d0aa3d7c62977682a0e2e3c4c94e730c)), closes [#17](https://github.com/nullthrone/governance/issues/17)
+* release in-progress when the roadmap run ends without a PR ([#22](https://github.com/nullthrone/governance/issues/22)) ([b60bb8c](https://github.com/nullthrone/governance/commit/b60bb8cc5187bd4208fc213e48500aac1ca2e9e1)), closes [#18](https://github.com/nullthrone/governance/issues/18)
+* repair issues found in the first onboarding run ([#12](https://github.com/nullthrone/governance/issues/12)) ([d3d7ccd](https://github.com/nullthrone/governance/commit/d3d7ccdab698d9d0d8486992a363f5c6b4e0f35f))
+* **security:** pass named secrets to the deploy workflow ([#13](https://github.com/nullthrone/governance/issues/13)) ([ca9eb90](https://github.com/nullthrone/governance/commit/ca9eb90143f96eed2f9dc782da8633c59156a073))
+* write plain vX.Y.Z release tags and accept component-prefixed ones ([#20](https://github.com/nullthrone/governance/issues/20)) ([0c7a888](https://github.com/nullthrone/governance/commit/0c7a888c56a448763bf6feb3cc16a5db513d7fb2)), closes [#16](https://github.com/nullthrone/governance/issues/16)
+
 ## 1.0.0 (2026-11-22)
 
 
