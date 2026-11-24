@@ -169,6 +169,20 @@ class ConsistencyTest(unittest.TestCase):
         tag = next(s for s in steps if s.get("name") == "Tag release candidate")
         self.assertEqual(tag["if"], "steps.state.outputs.count != '0'")
 
+    def test_roadmap_run_always_releases_in_progress(self):
+        job = load(WF / "housekeeping.yml")["jobs"]["model-task"]
+        steps = job["steps"]
+        claude = next(s for s in steps if str(s.get("uses", "")).startswith("anthropics/claude-code-action"))
+        self.assertLess(claude["timeout-minutes"], job["timeout-minutes"])
+        finish = next(s for s in steps if 'housekeeping.py" roadmap-finish' in s.get("run", ""))
+        token = next(s for s in steps if s.get("id") == "finish-app")
+        self.assertGreater(steps.index(finish), steps.index(claude))
+        for step in (token, finish):
+            self.assertIn("always()", step["if"])
+            self.assertIn("matrix.task == 'roadmap'", step["if"])
+        self.assertEqual(finish["env"]["GH_TOKEN"], "${{ steps.finish-app.outputs.token }}")
+        self.assertIn("in-progress", (ROOT / "prompts/digest.md").read_text(encoding="utf-8"))
+
     def test_third_party_actions_are_sha_pinned(self):
         # Scorecard Pinned-Dependencies; the comment keeps the version readable and lets Dependabot update it.
         for path in sorted(WF.glob("*.yml")) + sorted((ROOT / "callers").glob("*.yml")):

@@ -11,6 +11,7 @@ Collect open items:
 3. Fork PRs labeled po:review waiting for the owner.
 4. PRs or issues labeled blocked, and issues labeled automation:rollback opened in the last 24 hours.
 5. Failed governance audits (open issues titled "Governance audit failed").
+6. Issues labeled in-progress for more than 24 hours without an open PR that references them, and no PR merged into next that does (a roadmap run stopped early; removing the label lets the next nightly run retry).
 
 If there are no open items, end without a notification.
 Otherwise send one push notification: a short German summary (max 5 lines, counts per category) and the link to the owner's PO inbox project. Do not include issue text in the notification.

@@ -163,6 +163,8 @@ jobs:
           echo "allowed=$tools" >> "$GITHUB_OUTPUT"
       - name: Claude
         if: steps.check.outputs.run == 'true'
+        # Below the job timeout, so the roadmap finish below still runs when the model is cut off.
+        timeout-minutes: 80
         uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -187,6 +189,24 @@ jobs:
           pr=$(jq -r .pr "$RUNNER_TEMP/housekeeping-vars.json")
           node=$(GH_TOKEN="$APP_TOKEN" gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
           python3 "$GOV/scripts/po_inbox.py" add --node-id "$node"
+
+      # The pre-filter labelled the issue in-progress. Whatever happened to the run (timeout, turn cap,
+      # usage limit, WIP stop), release the label unless a PR exists. App tokens expire after an hour: mint a new one.
+      - name: Governance app token (roadmap finish)
+        if: always() && matrix.task == 'roadmap' && steps.check.outputs.run == 'true'
+        id: finish-app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+      - name: Release in-progress when the run opened no PR
+        if: always() && matrix.task == 'roadmap' && steps.check.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ steps.finish-app.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          issue=$(jq -r .issue "$RUNNER_TEMP/housekeeping-vars.json")
+          python3 "$GOV/scripts/housekeeping.py" roadmap-finish --issue "$issue" --run-url "$RUN_URL"
 
   deterministic:
     name: deterministic
