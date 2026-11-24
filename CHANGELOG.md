@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/nullthrone/governance/compare/v1.1.0...v1.1.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* skip publish-secrets in the CI audit, which the app token cannot read ([#24](https://github.com/nullthrone/governance/issues/24)) ([909be11](https://github.com/nullthrone/governance/commit/909be1197f65f8cf4ff9d6f12a79f20e59e4a43a))
+
 ## [1.1.0](https://github.com/nullthrone/governance/compare/v1.0.0...v1.1.0) (2026-11-24)
 
 
