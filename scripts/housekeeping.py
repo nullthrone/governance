@@ -5,6 +5,8 @@
   housekeeping.py check <task>                             run the pre-filter; outputs run, vars, agent, tier
   housekeeping.py audit-issue --report audit.json          open/update the po:decision issue for a failed audit
   housekeeping.py cleanup                                  delete merged branches, close stale bot PRs
+  housekeeping.py roadmap-finish --issue N --run-url URL   after a roadmap run without a PR: release in-progress,
+                                                           comment, and add blocked after the second attempt
 
 Claude is started only when `check` outputs run=true. Every check is cheap and token-free.
 """
@@ -329,6 +331,65 @@ def cleanup(repo: str, cfg: dict) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- roadmap finish (always runs after the model)
+
+ATTEMPT_MARKER = "<!-- governance-roadmap-attempt -->"
+ROADMAP_ATTEMPTS = 2
+
+
+def closing_pr(prs: list[dict], number: int) -> int | None:
+    """Open or merged PR for the issue: closing keyword in title or body, or the implementer's branch claude/<n>-.
+    Merged counts because closing keywords do not close issues from PRs into next."""
+    for pr in prs:
+        if pr.get("state") != "open" and not pr.get("merged_at"):
+            continue
+        refs = {int(n) for n in checks.CLOSES_RE.findall(f"{pr.get('title') or ''}\n{pr.get('body') or ''}")}
+        if number in refs or ((pr.get("head") or {}).get("ref") or "").startswith(f"claude/{number}-"):
+            return pr["number"]
+    return None
+
+
+def failed_attempts(timeline: list[dict], bot: str) -> int:
+    """Attempt comments by the bot since `blocked` was last removed, so removing it allows new attempts."""
+    count = 0
+    for event in timeline:
+        if event.get("event") == "unlabeled" and (event.get("label") or {}).get("name") == "blocked":
+            count = 0
+        elif event.get("event") == "commented" and (event.get("user") or event.get("actor") or {}).get("login") == bot and ATTEMPT_MARKER in (event.get("body") or ""):
+            count += 1
+    return count
+
+
+def roadmap_finish_plan(issue: dict, prs: list[dict], timeline: list[dict], bot: str) -> dict:
+    if issue.get("state") != "open" or "in-progress" not in labels_of(issue):
+        return {"release": False, "reason": "issue closed or not in progress"}
+    pr = closing_pr(prs, issue["number"])
+    if pr:
+        return {"release": False, "reason": f"PR #{pr} exists"}
+    attempt = failed_attempts(timeline, bot) + 1
+    return {"release": True, "attempt": attempt, "block": attempt >= ROADMAP_ATTEMPTS}
+
+
+def roadmap_finish(repo: str, cfg: dict, number: int, run_url: str) -> int:
+    issue = govlib.gh_api(f"repos/{repo}/issues/{number}")
+    prs = govlib.gh_api(f"repos/{repo}/pulls?state=all&sort=updated&direction=desc&per_page=100")
+    timeline = govlib.gh_api(f"repos/{repo}/issues/{number}/timeline?per_page=100", paginate=True)
+    result = roadmap_finish_plan(issue, prs, timeline, f"{cfg['bot_app_slug']}[bot]")
+    if not result["release"]:
+        govlib.summary(f"roadmap #{number}: {result['reason']}; labels unchanged.")
+        return 0
+    body = f"The roadmap run ended without a PR for this issue: {run_url}\n\n"
+    if result["block"]:
+        body += f"Attempt {result['attempt']} failed, so automation stops here (`blocked`). Remove `blocked` to allow {ROADMAP_ATTEMPTS} more attempts."
+    else:
+        body += "Removed `in-progress`; the next nightly run tries again."
+    govlib.gh("issue", "comment", str(number), "--repo", repo, "--body", f"{body}\n\n{ATTEMPT_MARKER}")
+    labels = ["--remove-label", "in-progress"] + (["--add-label", "blocked"] if result["block"] else [])
+    govlib.gh("issue", "edit", str(number), "--repo", repo, *labels)
+    govlib.summary(f"roadmap #{number}: no PR; in-progress removed{', blocked' if result['block'] else ''}.")
+    return 0
+
+
 # --------------------------------------------------------------------------- CLI
 
 
@@ -346,6 +407,9 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("audit-issue")
     a.add_argument("--report", required=True)
     sub.add_parser("cleanup")
+    f = sub.add_parser("roadmap-finish")
+    f.add_argument("--issue", required=True, type=int)
+    f.add_argument("--run-url", required=True)
     args = parser.parse_args(argv)
 
     cfg = govlib.load_config()
@@ -374,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         return audit_issue(repo, args.report)
     if args.cmd == "cleanup":
         return cleanup(repo, cfg)
+    if args.cmd == "roadmap-finish":
+        return roadmap_finish(repo, cfg, args.issue, args.run_url)
     return 1
 
 

@@ -43,7 +43,7 @@ The official Claude GitHub App requests **Workflows: read and write**, so it is 
 
 ## 6. Routines (Claude Code scheduled tasks)
 
-- [ ] **Digest**: create a scheduled task from `prompts/digest.md`, daily 18:00 Europe/Berlin, small model, GitHub connector, push notifications on.
+- [ ] **Digest**: create a scheduled task from `prompts/digest.md`, daily 18:00 Europe/Berlin, small model, GitHub connector, push notifications on. The routine holds a copy: paste the prompt again whenever `prompts/digest.md` changes (2026-11-24: stale `in-progress` issues).
 - [ ] Optional **immediate push on rollback**: create a routine with an API trigger and store its URL and token as secrets `ALERT_WEBHOOK_URL` / `ALERT_WEBHOOK_TOKEN`. `deploy.yml` posts `{"text": ...}` with a bearer token; verify the request format against the routine's trigger.
 
 ## 7. Hardening of this repository
