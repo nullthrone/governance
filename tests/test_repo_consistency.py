@@ -68,6 +68,24 @@ class ConsistencyTest(unittest.TestCase):
                     runs = " ".join(str(step.get("run", "")) for step in called_job["steps"])
                     self.assertTrue(any(f"checks.py\" {cmd}" in runs for cmd in via_load_pr), f"{job_id}/{called_id}")
 
+    def test_callers_grant_nested_job_permissions(self):
+        # GitHub validates this statically: one nested job asking for more than its caller job grants
+        # makes the whole caller workflow fail at startup, even when that job would be skipped.
+        level = {"none": 0, "read": 1, "write": 2}
+        for name, doc in self.callers().items():
+            for job_id, job in doc["jobs"].items():
+                granted = job.get("permissions") or {}
+                called = load(WF / job["uses"].split("/")[-1].split("@")[0])
+                requests = [("workflow", called.get("permissions") or {})]
+                requests += [(called_id, called_job.get("permissions") or {}) for called_id, called_job in called["jobs"].items()]
+                for called_id, wanted in requests:
+                    if not isinstance(wanted, dict):
+                        continue
+                    for scope, access in wanted.items():
+                        self.assertGreaterEqual(
+                            level[granted.get(scope, "none")], level[access], f"{name}:{job_id} -> {called_id} needs {scope}: {access}"
+                        )
+
     def test_secrets_passed_match_declared(self):
         for name, doc in self.callers().items():
             for job_id, job in doc["jobs"].items():
@@ -135,7 +153,7 @@ class ConsistencyTest(unittest.TestCase):
         names = {lbl["name"] for lbl in govlib.yaml_load((ROOT / "labels.yml").read_text())}
         used = set()
         for path in list(WF.glob("*.yml")) + list((ROOT / "scripts").glob("*.py")) + list((ROOT / "prompts/jobs").glob("*.md")):
-            used |= set(re.findall(r"(?:--add-label|--label|label(?:ed)?)\s+[\"'`]?((?:po|type|docs|automation):[a-z-]+|in-progress|blocked|adopting|needs-info|duplicate|idea)\b", path.read_text()))
+            used |= set(re.findall(r"(?:--add-label|--label|label(?:ed)?)\s+[\"'`]?((?:po|type|docs|automation):[a-z-]+|in-progress|blocked|adopting|needs-info|duplicate|idea)\b", path.read_text(encoding="utf-8")))
         self.assertEqual(used - names, set())
 
     def test_caller_names_cover_all_templates(self):

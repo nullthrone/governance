@@ -65,6 +65,36 @@ class RemoteAuditTest(unittest.TestCase):
         self.assertEqual(statuses["scorecard"], "info")
         self.assertEqual(statuses["token-permissions"], "pass")
 
+    def test_token_permissions_fall_back_to_the_organization(self):
+        # A gh OAuth login gets 403 on user/installations; the organization's list carries the same data.
+        app = {"id": 1, "app_slug": "nullthrone-governance", "repository_selection": "all",
+               "permissions": {"contents": "write", "pull_requests": "write", "issues": "write", "metadata": "read"}}
+        api = fake_api({"orgs/o/installations?per_page=100": [app]})
+
+        def without_user_installations(path, *args, **kwargs):
+            if path.startswith("user/installations"):
+                raise govlib.GhError("403 needs a GitHub App user token")
+            return api(path, *args, **kwargs)
+
+        with mock.patch.object(govlib, "gh_api", side_effect=without_user_installations), \
+             mock.patch.object(govlib, "gh", return_value=""), \
+             mock.patch.object(govlib, "gh_authenticated", return_value=True), \
+             mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            report = governance_audit.Audit(self.root, "o/demo", "full", None, None).run()
+        checks = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(checks["token-permissions"]["status"], "pass", checks["token-permissions"])
+
+        selected = {**app, "repository_selection": "selected"}
+        api = fake_api({"orgs/o/installations?per_page=100": [selected]})
+        with mock.patch.object(govlib, "gh_api", side_effect=without_user_installations), \
+             mock.patch.object(govlib, "gh", return_value=""), \
+             mock.patch.object(govlib, "gh_authenticated", return_value=True), \
+             mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            report = governance_audit.Audit(self.root, "o/demo", "full", None, None).run()
+        checks = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(checks["token-permissions"]["status"], "fail")
+        self.assertIn("needs an app user token", checks["token-permissions"]["message"])
+
     def test_ci_mode_skips_owner_only_check(self):
         statuses = {c["id"]: c["status"] for c in self.run_audit(mode="ci")["checks"]}
         self.assertEqual(statuses["token-permissions"], "skip")

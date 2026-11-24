@@ -344,7 +344,15 @@ class Audit:
         if self.mode == "ci":
             self.add("token-permissions", "skip", "needs the owner's token (run the audit locally)")
             return
-        installations = govlib.gh_api("user/installations?per_page=100", paginate=True)
+        # user/installations accepts only GitHub App user tokens; a gh OAuth login gets 403 there.
+        # For organization repositories the organization's installation list carries the same data.
+        via_org = False
+        try:
+            installations = govlib.gh_api("user/installations?per_page=100", paginate=True)
+        except govlib.GhError:
+            owner = self.repo.split("/", 1)[0]
+            installations = govlib.gh_api(f"orgs/{owner}/installations?per_page=100", paginate=True)
+            via_org = True
         slug = self.cfg["bot_app_slug"]
         mine = [i for i in installations if i.get("app_slug") == slug]
         problems = []
@@ -361,6 +369,9 @@ class Audit:
                     problems.append(f"app '{slug}' lacks {needed}:write")
             if inst.get("repository_selection") == "all":
                 covered = True
+            elif via_org:
+                problems.append(f"app '{slug}' is installed on selected repositories; coverage of {self.repo} needs an app user token")
+                covered = True  # reported above; avoid a second, misleading message
             else:
                 repos = govlib.gh_api(f"user/installations/{inst['id']}/repositories?per_page=100", paginate=True)
                 covered = covered or any(r.get("full_name") == self.repo for r in repos)
