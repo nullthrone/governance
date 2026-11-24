@@ -19,7 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import govlib  # noqa: E402
 
-TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$")
+# vX.Y.Z[-rc.N]; the optional `<name>-` prefix covers tags release-please wrote with the component
+# (`cinewright-v0.0.1`) before include-component-in-tag was set to false.
+TAG_RE = re.compile(r"^(?:[A-Za-z][\w.-]*-)?v?(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$")
 PR_REF_RE = re.compile(r"\(#(\d+)\)\s*$")
 TEST_SECTION_RE = re.compile(r"^##+\s*Test\b.*?$\n(?P<body>.*?)(?=^##+\s|\Z)", re.MULTILINE | re.DOTALL | re.IGNORECASE)
 

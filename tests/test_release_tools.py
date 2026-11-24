@@ -1,6 +1,8 @@
+import json
 import unittest
 
-from helpers import ROOT  # noqa: F401
+from helpers import ROOT
+import install
 import release_tools as rt
 import set_version
 
@@ -43,6 +45,33 @@ class ReleaseToolsTest(unittest.TestCase):
         self.assertEqual(rt.bump_kind("v1.2.3", "1.3.0"), "minor")
         self.assertEqual(rt.bump_kind("v1.2.3", "2.0.0"), "major")
         self.assertEqual(rt.bump_kind(None, "0.1.0"), "minor")
+
+    def test_component_prefixed_tags(self):
+        # release-please wrote `<component>-vX.Y.Z` before include-component-in-tag was false.
+        self.assertEqual(rt.parse_tag("cinewright-v0.0.1"), (0, 0, 1, None))
+        self.assertEqual(rt.parse_tag("my-tool-v1.2.3-rc.4"), (1, 2, 3, 4))
+        self.assertEqual(rt.parse_tag("v1.2.3-rc.1"), (1, 2, 3, 1))
+        self.assertIsNone(rt.parse_tag("cinewright-latest"))
+        tags = ["cinewright-v0.0.1", "v0.0.1-rc.1", "v0.0.1-rc.2"]
+        self.assertEqual(rt.stable_tags(tags), ["cinewright-v0.0.1"])
+        self.assertEqual(rt.bump_kind("cinewright-v0.0.1", "0.0.2"), "patch")
+        self.assertEqual(rt.bump_kind("cinewright-v0.0.1", "0.1.0"), "minor")
+        self.assertEqual(rt.next_rc(tags, ["fix: a"]), "0.0.2-rc.1")
+        self.assertEqual(rt.next_rc(tags, ["feat: a"]), "0.1.0-rc.1")
+        self.assertEqual(rt.next_rc(tags + ["v0.1.0-rc.1"], ["feat: a"]), "0.1.0-rc.2")
+        self.assertEqual(rt.previous_tag(tags + ["v0.0.2"], "v0.0.2"), "cinewright-v0.0.1")
+        # After the migration both the legacy tag and v0.0.1 point to the same release.
+        self.assertEqual(rt.next_rc(tags + ["v0.0.1"], ["fix: a"]), "0.0.2-rc.1")
+        self.assertIn(rt.previous_tag(tags + ["v0.0.1", "v0.0.2"], "v0.0.2"), ("cinewright-v0.0.1", "v0.0.1"))
+
+    def test_release_please_config_writes_plain_tags(self):
+        cfg = install.release_please_config({"language": "python", "package": {"name": "cinewright"}})
+        self.assertIs(cfg["include-component-in-tag"], False)
+        self.assertIs(cfg["include-v-in-tag"], True)
+        self.assertEqual(cfg["packages"]["."]["package-name"], "cinewright")
+        own = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
+        self.assertIs(own["include-component-in-tag"], False)
+        self.assertIs(own["include-v-in-tag"], True)
 
     def test_accepted_candidate(self):
         merged = [{"number": 5, "merged_at": "2026-11-20T10:00:00Z", "head": {"sha": "abc"}}]

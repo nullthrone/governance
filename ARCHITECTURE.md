@@ -48,6 +48,7 @@ Branch and release model per project repository: `main` is released, `next` coll
 - **Minor/major releases require an owner-accepted candidate**: the release PR auto-merges only for patches or when an approved `next → main` merge is in the range; otherwise `po:decision`. Covers commit messages that bypass the title check. (2026-11-22)
 - **`security`/`deps` as `fix(security)`/`fix(deps)`**: release-please cuts patches only for `fix`. (2026-11-22)
 - **release-please config in `.governance/`** (protected), manifest at the repo root because every release changes it. (2026-11-22)
+- **Release tags are `vX.Y.Z`** (`include-component-in-tag: false`), as the release-tags ruleset and `release_tools.py` expect; `<name>-vX.Y.Z` tags of earlier releases still parse. release-please finds the last release by the tag `v<manifest version>`, so a repository released before 2026-11-24 needs that tag on its release commit before the new config reaches `main`. (2026-11-24)
 - **Governance tooling is checked out at `job.workflow_sha`** (GitHub, Sept 2026; not on GHES), so callers carry one pin only. (2026-11-22)
 - **Scorecard runs as an own workflow** in public repos; scorecard-action cannot publish from a reusable workflow. It is the only non-caller workflow the audit allows. (2026-11-22)
 - **Actions are pinned by commit SHA** with the exact version as a comment (Scorecard Pinned-Dependencies); Dependabot updates both in `.github/workflows/`, `callers/scorecard.yml` by hand. (2026-11-24)
