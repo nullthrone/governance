@@ -39,6 +39,8 @@ class ReleaseToolsTest(unittest.TestCase):
         self.assertNotIn("(#3) (#3)", text)
         self.assertIn("1. Do", text)
         self.assertIn("https://run", text)
+        self.assertIn("Feedback: open an issue describing the defect and label it po:ready; the fix targets next.", text)
+        self.assertNotIn("comment on this PR", text)
 
     def test_bump_kind(self):
         self.assertEqual(rt.bump_kind("v1.2.3", "1.2.4"), "patch")
