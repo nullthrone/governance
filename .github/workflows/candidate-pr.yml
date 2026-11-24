@@ -1,4 +1,5 @@
-# Keeps exactly one acceptance PR next -> main open while next holds unreleased commits.
+# Keeps exactly one acceptance PR next -> main open while next holds unreleased commits. The merge commits
+# of sync-main-to-next do not count: without other commits there is no RC tag and no candidate PR.
 # Per push to next: RC tag, preview (deployment / TestPyPI / build artifact), screenshots,
 # PR body (changes, preview link, test script from the feature PRs, screenshots), milestone.
 # Auto-merge (merge commit) is enabled; candidate-approval stays red until the owner approves the head.
@@ -52,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           git fetch --quiet --tags origin main next
-          count=$(git rev-list --count origin/main..origin/next)
+          count=$(python3 "$GOV/scripts/release_tools.py" unreleased-count)
           echo "count=$count" >> "$GITHUB_OUTPUT"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head next --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
           echo "pr=$pr" >> "$GITHUB_OUTPUT"

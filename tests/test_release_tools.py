@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from helpers import ROOT
+from helpers import ROOT, git, make_repo
 import install
 import release_tools as rt
 import set_version
@@ -89,6 +89,24 @@ class ReleaseToolsTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn('version = "1.1.0"', text)
         self.assertIn('version = "9"', text)
+
+    def test_unreleased_count_ignores_sync_merges(self):
+        tmp, root = make_repo({"a.txt": "a"})
+        self.addCleanup(tmp.cleanup)
+        git(root, "branch", "next")
+        (root / "a.txt").write_text("fix", encoding="utf-8")
+        git(root, "commit", "-qam", "fix: on main")
+        git(root, "switch", "-q", "next")
+        git(root, "merge", "-q", "--no-ff", "-m", "chore: sync main into next", "main")
+        self.assertEqual(rt.unreleased_count(str(root), "main", "next"), 0)
+        (root / "b.txt").write_text("feat", encoding="utf-8")
+        git(root, "add", "b.txt")
+        git(root, "commit", "-qm", "feat: on next")
+        git(root, "switch", "-q", "main")
+        git(root, "commit", "-q", "--allow-empty", "-m", "fix: second")
+        git(root, "switch", "-q", "next")
+        git(root, "merge", "-q", "--no-ff", "-m", "chore: sync main into next", "main")
+        self.assertEqual(rt.unreleased_count(str(root), "main", "next"), 1)
 
 
 if __name__ == "__main__":

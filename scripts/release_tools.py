@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Release helpers for the reusable workflows.
 
+  unreleased-count number of commits on next that main lacks, sync merges excluded
   rc-version       next release-candidate version for the current next branch (vX.Y.Z-rc.N)
   version-smoke    run the profile's version command and require the expected version in its output
   previous-tag     stable tag released before the given tag (rollback target)
@@ -123,9 +124,19 @@ def accepted_candidate(merged_candidates: list[dict], reviews_by_pr: dict[int, l
     return None
 
 
+def unreleased_count(repo_dir: str = ".", base: str = "origin/main", head: str = "origin/next") -> int:
+    """Non-merge commits on head that base lacks. The merge commits of sync-main-to-next carry nothing to release."""
+    return int(govlib.git("rev-list", "--count", "--no-merges", f"{base}..{head}", cwd=repo_dir) or 0)
+
+
 def git_tags(repo_dir: str) -> list[str]:
     govlib.run(["git", "fetch", "--tags", "--quiet", "origin"], cwd=repo_dir)
     return [t for t in govlib.git("tag", "--list", cwd=repo_dir).splitlines() if t]
+
+
+def cmd_unreleased_count(args) -> int:
+    print(unreleased_count(args.repo_dir))
+    return 0
 
 
 def cmd_rc_version(args) -> int:
@@ -221,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-dir", default=".")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("unreleased-count")
     sub.add_parser("rc-version")
     vs = sub.add_parser("version-smoke")
     vs.add_argument("--expected")
@@ -240,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     rg.add_argument("--pr", required=True, type=int)
     args = parser.parse_args(argv)
     return {
+        "unreleased-count": cmd_unreleased_count,
         "rc-version": cmd_rc_version,
         "version-smoke": cmd_version_smoke,
         "previous-tag": cmd_previous_tag,

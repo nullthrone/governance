@@ -26,7 +26,7 @@ Branch and release model per project repository: `main` is released, `next` coll
 
 - Issue → triage (small model) → owner applies `po:ready` → po-ready-gate verifies the actor in the issue timeline → nightly roadmap pre-filter picks one issue → implementer PR.
 - Push to `main` → release-please (release PR auto-merges; minor/major only after an owner-accepted candidate) → docs to Pages, deploy, smoke test, automatic rollback to the previous tag; plus sync PR `main → next` (merge commit).
-- Push to `next` → RC tag, preview (deployment, TestPyPI or build artifact), screenshots, candidate PR with changes, preview link, test script from the feature PRs → owner approves the current head → merge commit → minor release.
+- Push to `next` with commits `main` lacks (sync merges do not count; without any, an open candidate PR is closed) → RC tag, preview (deployment, TestPyPI or build artifact), screenshots, candidate PR with changes, preview link, test script from the feature PRs → owner approves the current head → merge commit → minor release.
 - Schedule → pre-filters (`scripts/housekeeping.py`) → Claude only when a tool found something; audit, cleanup and fuzzing need no model.
 - Fork PR → scheduled pre-qualification (`po:review`) → owner approval (roadmap decision) → Claude ports it with co-author credit and closes the fork PR.
 
