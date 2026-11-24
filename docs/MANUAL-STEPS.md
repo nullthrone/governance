@@ -11,7 +11,7 @@ The official Claude GitHub App requests **Workflows: read and write**, so it is 
 - [x] Create a GitHub App (owner: your account) named **`nullthrone-governance`**. If the slug differs, update `bot_app_slug` and `bots` in `config/governance.json`.
   - Webhook: off. Installable: "Any account" (needed for several organizations).
   - Repository permissions: Contents **write**, Pull requests **write**, Issues **write**, Checks read, Actions read, Administration read (audit reads rulesets), Discussions read (Ideas digest), Metadata read.
-  - **Workflows: no access.** Organization and account permissions: none.
+  - **Workflows: no access.** **Secrets: no access** (the scheduled audit skips `publish-secrets` and `token-permissions`; the owner's full audit, default mode with their own `gh` login, covers them). Organization and account permissions: none.
 - [x] Generate a private key.
 - [x] Install the app on all orgs and your personal account (all repositories, or at least every governed repo plus each organization's `.github` repo).
 - [x] Per organization: variable `GOVERNANCE_APP_ID` and secret `GOVERNANCE_APP_PRIVATE_KEY` (organization level, visible to all repositories). Personal-account repositories need them as repository variable/secret.

@@ -64,6 +64,7 @@ class RemoteAuditTest(unittest.TestCase):
         statuses = {c["id"]: c["status"] for c in report["checks"]}
         self.assertEqual(statuses["scorecard"], "info")
         self.assertEqual(statuses["token-permissions"], "pass")
+        self.assertEqual(statuses["publish-secrets"], "pass")
 
     def test_token_permissions_fall_back_to_the_organization(self):
         # A gh OAuth login gets 403 on user/installations; the organization's list carries the same data.
@@ -98,6 +99,38 @@ class RemoteAuditTest(unittest.TestCase):
     def test_ci_mode_skips_owner_only_check(self):
         statuses = {c["id"]: c["status"] for c in self.run_audit(mode="ci")["checks"]}
         self.assertEqual(statuses["token-permissions"], "skip")
+
+    def run_without_secrets_access(self, mode):
+        # The governance app has no Secrets permission: GitHub answers 403 on the secrets endpoints.
+        api = fake_api()
+        denied = []
+
+        def app_token(path, *args, **kwargs):
+            if "secrets" in path or "/environments" in path:
+                denied.append(path)
+                raise govlib.GhError(f"gh api {path} failed: gh: Resource not accessible by integration (HTTP 403)")
+            return api(path, *args, **kwargs)
+
+        with mock.patch.object(govlib, "gh_api", side_effect=app_token), \
+             mock.patch.object(govlib, "gh", return_value=""), \
+             mock.patch.object(govlib, "gh_authenticated", return_value=True), \
+             mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            report = governance_audit.Audit(self.root, "o/demo", mode, None, None).run()
+        return report, {c["id"]: c for c in report["checks"]}, denied
+
+    def test_ci_mode_skips_publish_secrets_without_calling_the_api(self):
+        report, checks, denied = self.run_without_secrets_access("ci")
+        self.assertEqual(checks["publish-secrets"]["status"], "skip", checks["publish-secrets"])
+        self.assertEqual(checks["publish-secrets"]["message"], checks["token-permissions"]["message"])
+        self.assertEqual(denied, [])
+        self.assertEqual(failed(report), set(), report["checks"])
+        self.assertTrue(report["passed"])
+
+    def test_full_mode_still_reports_unreadable_secrets(self):
+        _, checks, denied = self.run_without_secrets_access("full")
+        self.assertEqual(checks["publish-secrets"]["status"], "fail")
+        self.assertIn("cannot verify", checks["publish-secrets"]["message"])
+        self.assertTrue(denied)
 
     def test_detects_remote_drift(self):
         bad_ruleset = copy.deepcopy(repo_settings.ruleset_templates()[0])

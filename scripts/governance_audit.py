@@ -6,7 +6,8 @@
 
 Modes
   default  all checks; remote checks use the owner's gh login. A remote check that cannot run fails.
-  --ci     as default, but checks that need the owner's own token (app installation permissions) are skipped.
+  --ci     as default, but checks that need the owner's own token (app installation permissions, Actions and
+           environment secrets) are skipped.
   --local  only checks on the working tree; remote checks are reported as skip.
 
 Output: human summary on stdout, JSON report with --json. Exit code 1 if any check fails.
@@ -392,6 +393,10 @@ class Audit:
         self.add("labels", "fail" if problems else "pass", ("; ".join(problems) or "taxonomy in sync") + extra)
 
     def check_publish_secrets(self) -> None:
+        # The governance app has no Secrets permission (least privilege); its token gets 403 on these endpoints.
+        if self.mode == "ci":
+            self.add("publish-secrets", "skip", "needs the owner's token (run the audit locally)")
+            return
         names = [s["name"] for s in govlib.gh_api(f"repos/{self.repo}/actions/secrets?per_page=100", paginate=True)]
         try:
             names += [f"org:{s['name']}" for s in govlib.gh_api(f"repos/{self.repo}/actions/organization-secrets?per_page=100", paginate=True)]
