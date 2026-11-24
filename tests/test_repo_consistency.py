@@ -92,8 +92,8 @@ class ConsistencyTest(unittest.TestCase):
                 called = load(WF / job["uses"].split("/")[-1].split("@")[0])
                 declared = set((called["on"]["workflow_call"] or {}).get("secrets") or {})
                 passed = job.get("secrets")
-                if passed == "inherit":
-                    continue
+                # Least privilege: callers pass named secrets, never all of them (Semgrep secrets-inherit).
+                self.assertNotEqual(passed, "inherit", f"{name}:{job_id}")
                 self.assertEqual(set(passed or {}) - declared, set(), f"{name}:{job_id}")
                 required = {k for k, v in ((called["on"]["workflow_call"] or {}).get("secrets") or {}).items() if v and v.get("required")}
                 self.assertEqual(required - set(passed or {}), set(), f"{name}:{job_id}")
